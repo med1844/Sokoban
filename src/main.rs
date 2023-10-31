@@ -1,29 +1,13 @@
+use std::borrow::BorrowMut;
+use std::cell::RefCell;
 use std::io::{stdout, Write};
+use std::rc::Rc;
 
 use crossterm::cursor::{MoveTo, MoveToNextLine};
-use crossterm::event::{read, Event, KeyCode, KeyEvent};
+use crossterm::event::{read, Event, KeyCode};
 use crossterm::queue;
-use crossterm::style::{PrintStyledContent, Stylize};
+use crossterm::style::{Print, PrintStyledContent, Stylize};
 use crossterm::terminal::{enable_raw_mode, Clear};
-
-use crossbeam_channel::{unbounded, Receiver};
-
-fn process_kb_events<F>(f: F) -> std::io::Result<()>
-where
-    F: Fn(KeyEvent) -> (),
-{
-    loop {
-        match read()? {
-            Event::Key(event) => {
-                f(event);
-                if event.code == KeyCode::Char('q') {
-                    break Ok(());
-                }
-            }
-            _ => (),
-        }
-    }
-}
 
 enum GameCommand {
     Null,
@@ -31,15 +15,20 @@ enum GameCommand {
     Down,
     Left,
     Right,
+    Quit,
 }
 
-impl From<KeyEvent> for GameCommand {
-    fn from(value: KeyEvent) -> Self {
-        match value.code {
-            KeyCode::Left => Self::Left,
-            KeyCode::Right => Self::Right,
-            KeyCode::Up => Self::Up,
-            KeyCode::Down => Self::Down,
+impl From<Event> for GameCommand {
+    fn from(value: Event) -> Self {
+        match value {
+            Event::Key(value) => match value.code {
+                KeyCode::Left => Self::Left,
+                KeyCode::Right => Self::Right,
+                KeyCode::Up => Self::Up,
+                KeyCode::Down => Self::Down,
+                KeyCode::Char('q') => Self::Quit,
+                _ => Self::Null,
+            },
             _ => Self::Null,
         }
     }
@@ -166,17 +155,19 @@ impl Game {
         }
     }
 
-    fn execute(&mut self, command: GameCommand) -> Result<(), std::io::Error> {
+    fn execute(&mut self, command: GameCommand) -> ScreenTransition {
         match command {
             GameCommand::Null => {}
             GameCommand::Up => self.push_entity((self.i, self.j), (usize::MAX, 0)),
             GameCommand::Down => self.push_entity((self.i, self.j), (1, 0)),
             GameCommand::Left => self.push_entity((self.i, self.j), (0, usize::MAX)),
             GameCommand::Right => self.push_entity((self.i, self.j), (0, 1)),
+            GameCommand::Quit => {}
         };
-        self.print()?;
-        stdout().flush()?;
-        Ok(())
+        match command {
+            GameCommand::Quit => ScreenTransition::Break,
+            _ => ScreenTransition::Continue,
+        }
     }
 }
 
@@ -222,23 +213,114 @@ impl PrintableByQueue for Game {
     }
 }
 
-fn main_loop<T>(r: Receiver<T>, mut g: Game)
-where
-    T: Into<GameCommand>,
-{
-    while let Ok(event) = r.recv() {
-        let _ = g.execute(event.into());
+trait Screen {
+    fn handle_input(&mut self, event: Event) -> ScreenTransition;
+    fn print(&self) -> Result<(), std::io::Error>;
+}
+
+enum ScreenTransition {
+    Continue,
+    SwitchTo(Rc<RefCell<dyn Screen>>),
+    Break,
+}
+
+struct GameScreen {
+    g: Game,
+}
+
+impl GameScreen {
+    fn new(g: Game) -> Self {
+        Self { g }
+    }
+}
+
+impl Screen for GameScreen {
+    fn handle_input(&mut self, event: Event) -> ScreenTransition {
+        self.g.execute(event.into())
+    }
+
+    fn print(&self) -> Result<(), std::io::Error> {
+        self.g.print()?;
+        stdout().flush()?;
+        Ok(())
+    }
+}
+
+struct MenuScreen {
+    options: Vec<(String, Rc<RefCell<dyn Screen>>)>,
+    choice: usize,
+}
+
+impl MenuScreen {
+    fn new(options: Vec<(String, Rc<RefCell<dyn Screen>>)>) -> Self {
+        Self { options, choice: 0 }
+    }
+}
+
+impl Screen for MenuScreen {
+    fn handle_input(&mut self, event: Event) -> ScreenTransition {
+        match event {
+            Event::Key(event) => match event.code {
+                KeyCode::Up => self.choice = if self.choice == 0 { 0 } else { self.choice - 1 },
+                KeyCode::Down => self.choice = (self.choice + 1).max(self.options.len()),
+                _ => {}
+            },
+            _ => {}
+        };
+        match event {
+            Event::Key(event) => match event.code {
+                KeyCode::Char('q') => ScreenTransition::Break,
+                KeyCode::Enter => ScreenTransition::SwitchTo(self.options[self.choice].1.clone()),
+                _ => ScreenTransition::Continue,
+            },
+            _ => ScreenTransition::Continue,
+        }
+    }
+
+    fn print(&self) -> Result<(), std::io::Error> {
+        queue!(
+            stdout(),
+            Clear(crossterm::terminal::ClearType::All),
+            MoveTo(0, 0)
+        )?;
+        for (desc, _) in self.options.iter() {
+            queue!(stdout(), Print(desc))?;
+        }
+        stdout().flush()?;
+        Ok(())
+    }
+}
+
+struct GameApp {
+    cur_screen: Rc<RefCell<dyn Screen>>,
+}
+
+impl GameApp {
+    fn new(screen: Rc<RefCell<dyn Screen>>) -> Self {
+        Self { cur_screen: screen }
+    }
+    fn run(&mut self) {
+        loop {
+            let transition = self
+                .cur_screen
+                .as_ref()
+                .borrow_mut()
+                .handle_input(read().unwrap());
+            match transition {
+                ScreenTransition::Continue => {}
+                ScreenTransition::Break => break,
+                ScreenTransition::SwitchTo(next_screen) => self.cur_screen = next_screen,
+            }
+            match self.cur_screen.as_ref().borrow().print() {
+                Ok(_) => {}
+                Err(msg) => println!("{:?}", msg),
+            }
+        }
     }
 }
 
 fn main() {
     let _ = enable_raw_mode();
-    let (s, r) = unbounded();
-    let io_thread = std::thread::spawn(move || {
-        let _ = process_kb_events(|event| {
-            s.send(event).unwrap();
-        });
-    });
     let g = Game::from(
         "     #### 
 ######  # 
@@ -251,9 +333,11 @@ fn main() {
  #   #####
  #####    ",
     );
-    let game_thread = std::thread::spawn(move || {
-        main_loop(r, g);
-    });
-    let _ = io_thread.join();
-    let _ = game_thread.join();
+    let game_screen = Rc::new(RefCell::new(GameScreen::new(g)));
+    let menu_screen = Rc::new(RefCell::new(MenuScreen::new(vec![(
+        "Go Game".into(),
+        game_screen.clone(),
+    )])));
+    let mut app = GameApp::new(menu_screen);
+    app.run();
 }
