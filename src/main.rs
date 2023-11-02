@@ -59,12 +59,12 @@ impl Cell {
     }
 }
 
-trait PrintableByQueue {
-    fn print(&self) -> Result<(), std::io::Error>;
+trait PrintFullByQueue {
+    fn print_full(&self) -> Result<(), std::io::Error>;
 }
 
-impl PrintableByQueue for Grid {
-    fn print(&self) -> Result<(), std::io::Error> {
+impl PrintFullByQueue for Grid {
+    fn print_full(&self) -> Result<(), std::io::Error> {
         queue!(
             stdout(),
             match *self {
@@ -76,8 +76,8 @@ impl PrintableByQueue for Grid {
     }
 }
 
-impl PrintableByQueue for Entity {
-    fn print(&self) -> Result<(), std::io::Error> {
+impl PrintFullByQueue for Entity {
+    fn print_full(&self) -> Result<(), std::io::Error> {
         queue!(
             stdout(),
             match *self {
@@ -88,15 +88,15 @@ impl PrintableByQueue for Entity {
     }
 }
 
-impl PrintableByQueue for Cell {
-    fn print(&self) -> Result<(), std::io::Error> {
+impl PrintFullByQueue for Cell {
+    fn print_full(&self) -> Result<(), std::io::Error> {
         match (self.entity, self.grid) {
-            (None, g) => g.print(),
+            (None, g) => g.print_full(),
             (Some(Entity::Box), Grid::Target) => queue!(stdout(), PrintStyledContent("*".yellow())),
             (Some(Entity::Player), Grid::Target) => {
                 queue!(stdout(), PrintStyledContent("+".green()))
             }
-            (Some(e), Grid::Ground) => e.print(),
+            (Some(e), Grid::Ground) => e.print_full(),
             _ => Err(std::io::Error::new(
                 std::io::ErrorKind::Other,
                 "Impossible state!",
@@ -111,6 +111,10 @@ struct Game {
     m: usize,
     i: usize,
     j: usize,
+}
+
+enum GameEvent {
+    Put(usize, usize, Cell),
 }
 
 impl Game {
@@ -133,19 +137,22 @@ impl Game {
         }
     }
 
-    fn push_entity(&mut self, src: (usize, usize), d: (usize, usize)) {
+    fn push_entity(&mut self, src: (usize, usize), d: (usize, usize)) -> Vec<GameEvent> {
         let (i, j) = src;
         let (di, dj) = d;
         let ni = i.overflowing_add(di).0;
         let nj = j.overflowing_add(dj).0;
+        let mut res = vec![];
         if ni < self.n && nj < self.m {
             match self.cells[ni][nj].grid {
                 Grid::Ground | Grid::Target => {
                     if let Some(Entity::Box) = self.cells[ni][nj].entity {
-                        self.push_entity((ni, nj), d.clone());
+                        res.append(&mut self.push_entity((ni, nj), d.clone()));
                     }
                     if self.cells[ni][nj].entity.is_none() {
                         self.cells[ni][nj].entity = std::mem::take(&mut self.cells[i][j].entity);
+                        res.push(GameEvent::Put(i, j, self.cells[i][j].clone()));
+                        res.push(GameEvent::Put(ni, nj, self.cells[ni][nj].clone()));
                         self.i = ni;
                         self.j = nj;
                     }
@@ -153,21 +160,25 @@ impl Game {
                 _ => {}
             }
         }
+        res
     }
 
-    fn execute(&mut self, command: GameCommand) -> ScreenTransition {
-        match command {
-            GameCommand::Null => {}
+    fn execute(&mut self, command: GameCommand) -> (ScreenTransition, Vec<GameEvent>) {
+        let events = match command {
+            GameCommand::Null => vec![],
             GameCommand::Up => self.push_entity((self.i, self.j), (usize::MAX, 0)),
             GameCommand::Down => self.push_entity((self.i, self.j), (1, 0)),
             GameCommand::Left => self.push_entity((self.i, self.j), (0, usize::MAX)),
             GameCommand::Right => self.push_entity((self.i, self.j), (0, 1)),
-            GameCommand::Quit => {}
+            GameCommand::Quit => vec![],
         };
-        match command {
-            GameCommand::Quit => ScreenTransition::Break,
-            _ => ScreenTransition::Continue,
-        }
+        (
+            match command {
+                GameCommand::Quit => ScreenTransition::Break,
+                _ => ScreenTransition::Continue,
+            },
+            events,
+        )
     }
 }
 
@@ -196,8 +207,8 @@ impl From<&str> for Game {
     }
 }
 
-impl PrintableByQueue for Game {
-    fn print(&self) -> Result<(), std::io::Error> {
+impl PrintFullByQueue for Game {
+    fn print_full(&self) -> Result<(), std::io::Error> {
         queue!(
             stdout(),
             Clear(crossterm::terminal::ClearType::All),
@@ -205,7 +216,7 @@ impl PrintableByQueue for Game {
         )?;
         for row in self.cells.iter() {
             for cell in row.iter() {
-                cell.print()?;
+                cell.print_full()?;
             }
             queue!(stdout(), MoveToNextLine(1))?;
         }
@@ -215,12 +226,13 @@ impl PrintableByQueue for Game {
 
 trait Screen {
     fn handle_input(&mut self, event: Event) -> ScreenTransition;
-    fn print(&self) -> Result<(), std::io::Error>;
 }
+
+trait PrintableScreen: Screen + PrintFullByQueue {}
 
 enum ScreenTransition {
     Continue,
-    SwitchTo(Rc<RefCell<dyn Screen>>),
+    SwitchTo(Rc<RefCell<dyn PrintableScreen>>),
     Break,
 }
 
@@ -236,26 +248,41 @@ impl GameScreen {
 
 impl Screen for GameScreen {
     fn handle_input(&mut self, event: Event) -> ScreenTransition {
-        self.g.execute(event.into())
+        let (transition, events) = self.g.execute(event.into());
+        // to reduce dependency & support increment printing, we use GameEvents to capture game
+        // internal changes, and let Screens utilize these events.
+        for event in events.iter() {
+            match event {
+                GameEvent::Put(i, j, cell) => {
+                    let _ = queue!(stdout(), MoveTo(*j as u16, *i as u16));
+                    let _ = cell.print_full();
+                }
+            }
+        }
+        transition
     }
+}
 
-    fn print(&self) -> Result<(), std::io::Error> {
-        self.g.print()?;
-        stdout().flush()?;
+impl PrintFullByQueue for GameScreen {
+    fn print_full(&self) -> Result<(), std::io::Error> {
+        self.g.print_full()?;
         Ok(())
     }
 }
 
 struct MenuScreen {
-    options: Vec<(String, Rc<RefCell<dyn Screen>>)>,
+    options: Vec<(String, Rc<RefCell<dyn PrintableScreen>>)>,
     choice: usize,
 }
 
 impl MenuScreen {
-    fn new(options: Vec<(String, Rc<RefCell<dyn Screen>>)>) -> Self {
+    fn new(options: Vec<(String, Rc<RefCell<dyn PrintableScreen>>)>) -> Self {
         Self { options, choice: 0 }
     }
 }
+
+impl PrintableScreen for GameScreen {}
+impl PrintableScreen for MenuScreen {}
 
 impl Screen for MenuScreen {
     fn handle_input(&mut self, event: Event) -> ScreenTransition {
@@ -276,8 +303,10 @@ impl Screen for MenuScreen {
             _ => ScreenTransition::Continue,
         }
     }
+}
 
-    fn print(&self) -> Result<(), std::io::Error> {
+impl PrintFullByQueue for MenuScreen {
+    fn print_full(&self) -> Result<(), std::io::Error> {
         queue!(
             stdout(),
             Clear(crossterm::terminal::ClearType::All),
@@ -286,17 +315,18 @@ impl Screen for MenuScreen {
         for (desc, _) in self.options.iter() {
             queue!(stdout(), Print(desc))?;
         }
-        stdout().flush()?;
         Ok(())
     }
 }
 
 struct GameApp {
-    cur_screen: Rc<RefCell<dyn Screen>>,
+    cur_screen: Rc<RefCell<dyn PrintableScreen>>,
 }
 
 impl GameApp {
-    fn new(screen: Rc<RefCell<dyn Screen>>) -> Self {
+    fn new(screen: Rc<RefCell<dyn PrintableScreen>>) -> Self {
+        let _ = screen.as_ref().borrow().print_full();
+        let _ = stdout().flush();
         Self { cur_screen: screen }
     }
     fn run(&mut self) {
@@ -306,14 +336,14 @@ impl GameApp {
                 .as_ref()
                 .borrow_mut()
                 .handle_input(read().unwrap());
+            let _ = stdout().flush();
             match transition {
                 ScreenTransition::Continue => {}
                 ScreenTransition::Break => break,
-                ScreenTransition::SwitchTo(next_screen) => self.cur_screen = next_screen,
-            }
-            match self.cur_screen.as_ref().borrow().print() {
-                Ok(_) => {}
-                Err(msg) => println!("{:?}", msg),
+                ScreenTransition::SwitchTo(next_screen) => {
+                    self.cur_screen = next_screen;
+                    let _ = self.cur_screen.as_ref().borrow().print_full();
+                }
             }
         }
     }
@@ -321,17 +351,28 @@ impl GameApp {
 
 fn main() {
     let _ = enable_raw_mode();
+    //     let g = Game::from(
+    //         "     ####
+    // ######  #
+    // #       #
+    // #      .#
+    // #@ #######
+    // ##       #
+    //  # # #   #
+    //  #     $ #
+    //  #   #####
+    //  #####    ",
+    //     );
     let g = Game::from(
-        "     #### 
-######  # 
-#       # 
-#      .# 
-#@ #######
-##       #
- # # #   #
- #     $ #
- #   #####
- #####    ",
+        "#####  ####  #####
+#   ####  ####   #
+#                #
+##        ###   ##
+ ## $  # .. $ @##
+##  ##   ####   ##
+#                #
+#   ##########   #
+#####        #####",
     );
     let game_screen = Rc::new(RefCell::new(GameScreen::new(g)));
     let menu_screen = Rc::new(RefCell::new(MenuScreen::new(vec![(
