@@ -8,6 +8,7 @@ pub trait Screen: PrintFullByQueue {
 }
 
 pub enum ScreenTransition {
+    Back,
     Continue,
     SwitchTo(Rc<RefCell<dyn Screen>>),
     Break,

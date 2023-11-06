@@ -4,10 +4,10 @@ use std::rc::Rc;
 
 use super::screen::{Screen, ScreenTransition};
 use crate::utils::print_by_queue::PrintFullByQueue;
-use crossterm::cursor::MoveTo;
+use crossterm::cursor::{MoveTo, MoveToNextLine};
 use crossterm::event::{Event, KeyCode};
 use crossterm::queue;
-use crossterm::style::Print;
+use crossterm::style::{Print, PrintStyledContent, Stylize};
 use crossterm::terminal::Clear;
 
 pub struct MenuScreen {
@@ -23,14 +23,24 @@ impl MenuScreen {
 
 impl Screen for MenuScreen {
     fn handle_input(&mut self, event: Event) -> ScreenTransition {
+        let _ = queue!(
+            stdout(),
+            MoveTo(0, self.choice as u16),
+            Print(self.options[self.choice].0.clone()),
+        );
         match event {
             Event::Key(event) => match event.code {
                 KeyCode::Up => self.choice = if self.choice == 0 { 0 } else { self.choice - 1 },
-                KeyCode::Down => self.choice = (self.choice + 1).max(self.options.len()),
+                KeyCode::Down => self.choice = (self.choice + 1).min(self.options.len() - 1),
                 _ => {}
             },
             _ => {}
         };
+        let _ = queue!(
+            stdout(),
+            MoveTo(0, self.choice as u16),
+            PrintStyledContent(self.options[self.choice].0.as_str().green()),
+        );
         match event {
             Event::Key(event) => match event.code {
                 KeyCode::Char('q') => ScreenTransition::Break,
@@ -50,8 +60,13 @@ impl PrintFullByQueue for MenuScreen {
             MoveTo(0, 0)
         )?;
         for (desc, _) in self.options.iter() {
-            queue!(stdout(), Print(desc))?;
+            queue!(stdout(), Print(desc), MoveToNextLine(1))?;
         }
+        queue!(
+            stdout(),
+            MoveTo(0, self.choice as u16),
+            PrintStyledContent(self.options[self.choice].0.as_str().green())
+        )?;
         Ok(())
     }
 }

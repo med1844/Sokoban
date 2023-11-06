@@ -76,7 +76,7 @@ impl Game {
         };
         (
             match command {
-                GameCommand::Quit => ScreenTransition::Break,
+                GameCommand::Quit => ScreenTransition::Back,
                 _ => ScreenTransition::Continue,
             },
             events,
