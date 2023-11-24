@@ -1,6 +1,7 @@
 use crossterm::cursor::MoveTo;
 use crossterm::event::Event;
 use crossterm::queue;
+use crossterm::style::Print;
 
 use super::screen::{Screen, ScreenTransition};
 use crate::game::game::Game;
@@ -28,6 +29,9 @@ impl Screen for GameScreen {
                 GameEvent::Put(i, j, cell) => {
                     let _ = queue!(stdout(), MoveTo(*j as u16, *i as u16));
                     let _ = cell.print_full();
+                }
+                GameEvent::Win => {
+                    let _ = queue!(stdout(), Print("You win!"));
                 }
             }
         }

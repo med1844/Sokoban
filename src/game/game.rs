@@ -17,6 +17,8 @@ pub struct Game {
     m: usize,
     i: usize,
     j: usize,
+    num_ok_box: usize, // number of boxes on targets
+    num_box: usize,
 }
 
 impl Game {
@@ -33,8 +35,41 @@ impl Game {
             }
             Err("entities doesn't contain player")
         }
+        let num_ok_box: usize = cells
+            .iter()
+            .map(|row| {
+                row.iter()
+                    .map(|c| match (c.entity, c.grid) {
+                        (Some(Entity::Box), Grid::Target) => 1,
+                        _ => 0,
+                    })
+                    .sum::<usize>()
+            })
+            .sum();
+        let num_box: usize = cells
+            .iter()
+            .map(|row| {
+                row.iter()
+                    .map(|c| {
+                        if let Some(Entity::Box) = c.entity {
+                            1
+                        } else {
+                            0
+                        }
+                    })
+                    .sum::<usize>()
+            })
+            .sum();
         match get_ij(&cells) {
-            Ok((i, j)) => Self { cells, n, m, i, j },
+            Ok((i, j)) => Self {
+                cells,
+                n,
+                m,
+                i,
+                j,
+                num_ok_box,
+                num_box,
+            },
             Err(e) => panic!("{}", e),
         }
     }
@@ -52,6 +87,17 @@ impl Game {
                         res.append(&mut self.push_entity((ni, nj), d.clone()));
                     }
                     if self.cells[ni][nj].entity.is_none() {
+                        if let Some(Entity::Box) = self.cells[i][j].entity {
+                            self.num_ok_box +=
+                                match (self.cells[i][j].grid, self.cells[ni][nj].grid) {
+                                    (Grid::Ground, Grid::Target) => 1,
+                                    (Grid::Target, Grid::Ground) => usize::MAX,
+                                    _ => 0,
+                                };
+                            if self.num_ok_box == self.num_box {
+                                res.push(GameEvent::Win);
+                            }
+                        }
                         self.cells[ni][nj].entity = std::mem::take(&mut self.cells[i][j].entity);
                         res.push(GameEvent::Put(i, j, self.cells[i][j].clone()));
                         res.push(GameEvent::Put(ni, nj, self.cells[ni][nj].clone()));
