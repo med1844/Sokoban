@@ -111,7 +111,14 @@ impl Game {
         res
     }
 
+    pub fn is_finished(&self) -> bool {
+        self.num_ok_box == self.num_box
+    }
+
     pub fn execute(&mut self, command: GameCommand) -> (ScreenTransition, Vec<GameEvent>) {
+        if self.is_finished() {
+            return (ScreenTransition::Back, vec![]);
+        }
         let events = match command {
             GameCommand::Null => vec![],
             GameCommand::Up => self.push_entity((self.i, self.j), (usize::MAX, 0)),

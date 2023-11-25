@@ -31,7 +31,7 @@ impl Screen for GameScreen {
                     let _ = cell.print_full();
                 }
                 GameEvent::Win => {
-                    let _ = queue!(stdout(), Print("You win!"));
+                    let _ = queue!(stdout(), Print("You win! Press any key to exit this level"));
                 }
             }
         }

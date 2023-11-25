@@ -23,11 +23,7 @@ impl MenuScreen {
 
 impl Screen for MenuScreen {
     fn handle_input(&mut self, event: Event) -> ScreenTransition {
-        let _ = queue!(
-            stdout(),
-            MoveTo(0, self.choice as u16),
-            Print(self.options[self.choice].0.clone()),
-        );
+        let old_choice = self.choice;
         match event {
             Event::Key(event) => match event.code {
                 KeyCode::Up => self.choice = if self.choice == 0 { 0 } else { self.choice - 1 },
@@ -36,11 +32,18 @@ impl Screen for MenuScreen {
             },
             _ => {}
         };
-        let _ = queue!(
-            stdout(),
-            MoveTo(0, self.choice as u16),
-            PrintStyledContent(self.options[self.choice].0.as_str().green()),
-        );
+        if self.choice != old_choice {
+            let _ = queue!(
+                stdout(),
+                MoveTo(0, old_choice as u16),
+                Print(self.options[old_choice].0.clone()),
+            );
+            let _ = queue!(
+                stdout(),
+                MoveTo(0, self.choice as u16),
+                PrintStyledContent(self.options[self.choice].0.as_str().green()),
+            );
+        }
         match event {
             Event::Key(event) => match event.code {
                 KeyCode::Char('q') => ScreenTransition::Break,

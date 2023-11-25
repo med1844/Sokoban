@@ -6,15 +6,14 @@ use crossterm::cursor::{Hide, Show};
 use crossterm::event::read;
 use crossterm::execute;
 use crossterm::terminal::enable_raw_mode;
+use screen::level_selector_screen::{FileLevel, LevelSelectorScreen};
 
 mod game;
 mod screen;
 mod utils;
 
-use crate::game::game::Game;
 use crate::screen::{
     exit_screen::ExitScreen,
-    game_screen::GameScreen,
     menu_screen::MenuScreen,
     screen::{Screen, ScreenTransition},
 };
@@ -68,34 +67,21 @@ impl GameApp {
 }
 
 fn main() {
+    // important init section
     let _ = enable_raw_mode();
     let _ = execute!(stdout(), Hide);
-    //     let g = Game::from(
-    //         "     ####
-    // ######  #
-    // #       #
-    // #      .#
-    // #@ #######
-    // ##       #
-    //  # # #   #
-    //  #     $ #
-    //  #   #####
-    //  #####    ",
-    //     );
-    let g = Game::from(
-        "#####  ####  #####
-#   ####  ####   #
-#                #
-##        ###   ##
- ## $  # .. $ @##
-##  ##   ####   ##
-#                #
-#   ##########   #
-#####        #####",
-    );
-    let game_screen = Rc::new(RefCell::new(GameScreen::new(g)));
+
+    let level_selector_screen = Rc::new(RefCell::new(LevelSelectorScreen::from(
+        vec!["levels/cognitive_1.txt", "levels/cognitive_2.txt"]
+            .iter()
+            .map(|v| FileLevel {
+                level_name: v.to_string(),
+                filename: v.to_string(),
+            })
+            .collect::<Vec<FileLevel>>(),
+    )));
     let menu_screen = Rc::new(RefCell::new(MenuScreen::new(vec![
-        ("Go Game".into(), game_screen.clone()),
+        ("Start".into(), level_selector_screen.clone()),
         ("Exit".into(), Rc::new(RefCell::new(ExitScreen::new()))),
     ])));
     let mut app = GameApp::new(menu_screen);
