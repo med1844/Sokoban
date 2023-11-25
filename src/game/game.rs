@@ -88,12 +88,16 @@ impl Game {
                     }
                     if self.cells[ni][nj].entity.is_none() {
                         if let Some(Entity::Box) = self.cells[i][j].entity {
-                            self.num_ok_box +=
-                                match (self.cells[i][j].grid, self.cells[ni][nj].grid) {
-                                    (Grid::Ground, Grid::Target) => 1,
-                                    (Grid::Target, Grid::Ground) => usize::MAX,
-                                    _ => 0,
-                                };
+                            self.num_ok_box = self
+                                .num_ok_box
+                                .overflowing_add(
+                                    match (self.cells[i][j].grid, self.cells[ni][nj].grid) {
+                                        (Grid::Ground, Grid::Target) => 1,
+                                        (Grid::Target, Grid::Ground) => usize::MAX,
+                                        _ => 0,
+                                    },
+                                )
+                                .0;
                             if self.num_ok_box == self.num_box {
                                 res.push(GameEvent::Win);
                             }
@@ -146,14 +150,13 @@ impl From<&str> for Game {
                     v.chars()
                         .into_iter()
                         .map(|c| match c {
-                            ' ' => Cell::new(Grid::Ground, None),
                             '#' => Cell::new(Grid::Wall, None),
                             '@' => Cell::new(Grid::Ground, Some(Entity::Player)),
                             '$' => Cell::new(Grid::Ground, Some(Entity::Box)),
                             '.' => Cell::new(Grid::Target, None),
                             '+' => Cell::new(Grid::Target, Some(Entity::Player)),
                             '*' => Cell::new(Grid::Target, Some(Entity::Box)),
-                            _ => panic!("Invalid char!"),
+                            ' ' | _ => Cell::new(Grid::Ground, None),
                         })
                         .collect()
                 })

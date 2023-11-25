@@ -5,7 +5,8 @@ use std::rc::Rc;
 use crossterm::cursor::{Hide, Show};
 use crossterm::event::read;
 use crossterm::execute;
-use crossterm::terminal::enable_raw_mode;
+use crossterm::terminal::{enable_raw_mode, Clear};
+use glob::glob;
 use screen::level_selector_screen::{FileLevel, LevelSelectorScreen};
 
 mod game;
@@ -32,6 +33,7 @@ impl GameApp {
     }
 
     fn refresh_screen(&mut self) {
+        let _ = execute!(stdout(), Clear(crossterm::terminal::ClearType::All));
         let _ = self.screens.last().unwrap().as_ref().borrow().print_full();
         let _ = stdout().flush();
     }
@@ -72,11 +74,16 @@ fn main() {
     let _ = execute!(stdout(), Hide);
 
     let level_selector_screen = Rc::new(RefCell::new(LevelSelectorScreen::from(
-        vec!["levels/cognitive_1.txt", "levels/cognitive_2.txt"]
-            .iter()
-            .map(|v| FileLevel {
-                level_name: v.to_string(),
-                filename: v.to_string(),
+        glob("levels/*.txt")
+            .expect("failed to read glob pattern")
+            .into_iter()
+            .filter(|v| v.is_ok())
+            .map(|v| {
+                let s = v.ok().unwrap().to_str().unwrap().to_string();
+                FileLevel {
+                    level_name: s.clone(),
+                    filename: s,
+                }
             })
             .collect::<Vec<FileLevel>>(),
     )));
