@@ -4,7 +4,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 pub trait Screen: PrintFullByQueue {
-    fn handle_input(&mut self, event: Event) -> ScreenTransition;
+    fn update(&mut self, event: Option<Event>) -> ScreenTransition;
 }
 
 pub enum ScreenTransition {

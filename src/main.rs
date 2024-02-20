@@ -1,9 +1,11 @@
 use std::cell::RefCell;
 use std::io::{stdout, Write};
 use std::rc::Rc;
+use std::thread;
+use std::time::Duration;
 
 use crossterm::cursor::{Hide, Show};
-use crossterm::event::read;
+use crossterm::event::{poll, read, Event};
 use crossterm::execute;
 use crossterm::terminal::{enable_raw_mode, Clear};
 use glob::glob;
@@ -18,6 +20,17 @@ use crate::screen::{
     menu_screen::MenuScreen,
     screen::{Screen, ScreenTransition},
 };
+
+fn next_event() -> Option<Event> {
+    // if poll is None, none, else read
+    match poll(Duration::from_secs(0)) {
+        Ok(v) => match v {
+            true => read().ok(),
+            false => None,
+        },
+        Err(_) => None,
+    }
+}
 
 struct GameApp {
     screens: Vec<Rc<RefCell<dyn Screen>>>,
@@ -39,18 +52,18 @@ impl GameApp {
     }
 
     fn run(&mut self) {
-        loop {
+        'main: loop {
             let transition = self
                 .screens
                 .last()
                 .unwrap()
                 .as_ref()
                 .borrow_mut()
-                .handle_input(read().unwrap());
+                .update(next_event());
             let _ = stdout().flush();
             match transition {
                 ScreenTransition::Continue => {}
-                ScreenTransition::Break => break,
+                ScreenTransition::Break => break 'main,
                 ScreenTransition::SwitchTo(next_screen) => {
                     self.screens.push(next_screen);
                     self.refresh_screen();
@@ -60,10 +73,11 @@ impl GameApp {
                         self.screens.pop();
                         self.refresh_screen();
                     } else {
-                        break;
+                        break 'main;
                     }
                 }
             }
+            thread::sleep(Duration::from_secs_f64(1.0 / 144.0));
         }
     }
 }

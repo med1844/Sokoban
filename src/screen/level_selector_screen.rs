@@ -69,10 +69,13 @@ impl PrintFullByQueue for LevelSelectorScreen {
 }
 
 impl Screen for LevelSelectorScreen {
-    fn handle_input(&mut self, event: crossterm::event::Event) -> super::screen::ScreenTransition {
+    fn update(
+        &mut self,
+        event: Option<crossterm::event::Event>,
+    ) -> super::screen::ScreenTransition {
         let original_cur = self.cur;
         match event {
-            Event::Key(event) => match event.code {
+            Some(Event::Key(event)) => match event.code {
                 KeyCode::Up => self.cur = if self.cur == 0 { 0 } else { self.cur - 1 },
                 KeyCode::Down => self.cur = (self.cur + 1).min(self.levels.len() - 1),
                 _ => {}
@@ -92,7 +95,7 @@ impl Screen for LevelSelectorScreen {
             );
         }
         match event {
-            Event::Key(event) => match event.code {
+            Some(Event::Key(event)) => match event.code {
                 KeyCode::Char('q') => ScreenTransition::Back,
                 KeyCode::Enter => {
                     if let Ok(screen) = self.levels[self.cur].1() {

@@ -11,6 +11,7 @@ use super::grid::Grid;
 use crate::screen::screen::ScreenTransition;
 use crate::utils::print_by_queue::PrintFullByQueue;
 
+#[derive(Clone)]
 pub struct Game {
     cells: Vec<Vec<Cell>>,
     n: usize,
@@ -124,12 +125,11 @@ impl Game {
             return (ScreenTransition::Back, vec![]);
         }
         let events = match command {
-            GameCommand::Null => vec![],
             GameCommand::Up => self.push_entity((self.i, self.j), (usize::MAX, 0)),
             GameCommand::Down => self.push_entity((self.i, self.j), (1, 0)),
             GameCommand::Left => self.push_entity((self.i, self.j), (0, usize::MAX)),
             GameCommand::Right => self.push_entity((self.i, self.j), (0, 1)),
-            GameCommand::Quit => vec![],
+            _ => vec![],
         };
         (
             match command {

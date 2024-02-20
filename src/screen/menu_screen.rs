@@ -22,10 +22,10 @@ impl MenuScreen {
 }
 
 impl Screen for MenuScreen {
-    fn handle_input(&mut self, event: Event) -> ScreenTransition {
+    fn update(&mut self, event: Option<Event>) -> ScreenTransition {
         let old_choice = self.choice;
         match event {
-            Event::Key(event) => match event.code {
+            Some(Event::Key(KeyEve)) => match event.code {
                 KeyCode::Up => self.choice = if self.choice == 0 { 0 } else { self.choice - 1 },
                 KeyCode::Down => self.choice = (self.choice + 1).min(self.options.len() - 1),
                 _ => {}
@@ -45,7 +45,7 @@ impl Screen for MenuScreen {
             );
         }
         match event {
-            Event::Key(event) => match event.code {
+            Some(Event::Key(event)) => match event.code {
                 KeyCode::Char('q') => ScreenTransition::Break,
                 KeyCode::Enter => ScreenTransition::SwitchTo(self.options[self.choice].1.clone()),
                 _ => ScreenTransition::Continue,
