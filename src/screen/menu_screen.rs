@@ -25,7 +25,7 @@ impl Screen for MenuScreen {
     fn update(&mut self, event: Option<Event>) -> ScreenTransition {
         let old_choice = self.choice;
         match event {
-            Some(Event::Key(KeyEve)) => match event.code {
+            Some(Event::Key(event)) => match event.code {
                 KeyCode::Up => self.choice = if self.choice == 0 { 0 } else { self.choice - 1 },
                 KeyCode::Down => self.choice = (self.choice + 1).min(self.options.len() - 1),
                 _ => {}
