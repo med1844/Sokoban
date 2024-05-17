@@ -3,7 +3,7 @@ use crossterm::queue;
 use crossterm::style::{PrintStyledContent, Stylize};
 use std::io::stdout;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Hash, PartialEq, Eq)]
 pub enum Grid {
     Wall,
     Ground,

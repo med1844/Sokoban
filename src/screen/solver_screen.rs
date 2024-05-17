@@ -1,3 +1,4 @@
+use std::collections::{HashSet, VecDeque};
 use std::io::stdout;
 
 use super::game_screen::GameScreen;
@@ -20,20 +21,45 @@ pub struct SolverScreen {
     cur_update: u8,
 }
 
+impl SolverScreen {
+    fn solve(g: &Game) -> Vec<GameCommand> {
+        // this has tons of improvement! so we start with BFS first.
+        let mut que = VecDeque::new();
+        let mut visited = HashSet::new();
+        que.push_back((g.clone(), vec![]));
+        while let Some((g, steps)) = que.pop_front() {
+            if g.is_finished() {
+                return steps;
+            }
+            if visited.contains(&g) {
+                continue;
+            }
+            visited.insert(g.clone());
+            for command in [
+                GameCommand::Up,
+                GameCommand::Down,
+                GameCommand::Left,
+                GameCommand::Right,
+            ] {
+                let mut new_g = g.clone();
+                let _ = new_g.execute(command);
+                if !visited.contains(&new_g) {
+                    let mut new_steps = steps.clone();
+                    new_steps.push(command);
+                    que.push_back((new_g, new_steps));
+                }
+            }
+        }
+        vec![]
+    }
+}
+
 impl From<Game> for SolverScreen {
     fn from(value: Game) -> Self {
+        let solution = Self::solve(&value);
         Self {
             game_screen: GameScreen::new(value),
-            sol: vec![
-                GameCommand::Right,
-                GameCommand::Right,
-                GameCommand::Right,
-                GameCommand::Right,
-                GameCommand::Right,
-                GameCommand::Right,
-                GameCommand::Right,
-                GameCommand::Right,
-            ],
+            sol: solution,
             cur: 0,
             play: false,
             print_per_n_updates: 16,

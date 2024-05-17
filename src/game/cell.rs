@@ -5,7 +5,7 @@ use crossterm::queue;
 use crossterm::style::{PrintStyledContent, Stylize};
 use std::io::stdout;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Hash, PartialEq, Eq)]
 pub struct Cell {
     pub grid: Grid,
     pub entity: Option<Entity>,

@@ -11,7 +11,7 @@ use super::grid::Grid;
 use crate::screen::screen::ScreenTransition;
 use crate::utils::print_by_queue::PrintFullByQueue;
 
-#[derive(Clone)]
+#[derive(Clone, Hash, PartialEq, Eq)]
 pub struct Game {
     pub cells: Vec<Vec<Cell>>,
     pub n: usize,
