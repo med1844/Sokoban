@@ -1,3 +1,4 @@
+pub mod computing_solution_screen;
 pub mod exit_screen;
 pub mod game_screen;
 pub mod level_selector_screen;

@@ -1,16 +1,20 @@
+use super::computing_solution_screen::ComputingSolutionScreen;
 use super::screen::{Screen, ScreenTransition};
 use super::solver_screen::SolverScreen;
 use crate::game::game::Game;
 use crate::game::game_event::GameEvent;
 use crate::utils::print_by_queue::PrintFullByQueue;
-use crossterm::cursor::MoveTo;
+use crossterm::cursor::{MoveTo, MoveToNextLine};
 use crossterm::event::{Event, KeyCode, KeyEvent};
 use crossterm::queue;
-use crossterm::style::Print;
+use crossterm::style::{Print, PrintStyledContent, Stylize};
 use std::cell::RefCell;
 use std::io::stdout;
 use std::rc::Rc;
+use std::sync::{mpsc, Arc};
+use std::thread;
 
+#[derive(Clone)]
 pub struct GameScreen {
     pub g: Game,
 }
@@ -27,10 +31,15 @@ impl Screen for GameScreen {
             Some(event) => {
                 if let Event::Key(KeyEvent { code, .. }) = event {
                     if let KeyCode::Char('o') = code {
-                        // creates an auto solver screen
-                        let solver_screen =
-                            Rc::new(RefCell::new(SolverScreen::from(self.g.clone())));
-                        return ScreenTransition::SwitchTo(solver_screen);
+                        let (sender, receiver) = mpsc::channel();
+                        let g = self.g.clone();
+                        let handle = thread::spawn(move || {
+                            let solution = g.solve_interruptable(receiver);
+                            Arc::new(SolverScreen::new(g, solution))
+                        });
+                        return ScreenTransition::SwitchTo(Rc::new(RefCell::new(
+                            ComputingSolutionScreen::new(sender, handle),
+                        )));
                     }
                 }
                 let (transition, events) = self.g.execute(event.into());

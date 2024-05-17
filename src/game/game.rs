@@ -1,7 +1,10 @@
 use crossterm::cursor::{MoveTo, MoveToNextLine};
 use crossterm::queue;
 use crossterm::terminal::Clear;
+use std::collections::HashSet;
+use std::collections::VecDeque;
 use std::io::stdout;
+use std::sync::mpsc::Receiver;
 
 use super::cell::Cell;
 use super::entity::Entity;
@@ -21,6 +24,8 @@ pub struct Game {
     pub num_ok_box: usize, // number of boxes on targets
     pub num_box: usize,
 }
+
+pub type Solution = Vec<GameCommand>;
 
 impl Game {
     pub fn new(cells: Vec<Vec<Cell>>) -> Self {
@@ -138,6 +143,40 @@ impl Game {
             },
             events,
         )
+    }
+
+    pub fn solve_interruptable(&self, r: Receiver<()>) -> Solution {
+        // this has tons of improvement! so we start with BFS first.
+        let mut que = VecDeque::new();
+        let mut visited = HashSet::new();
+        que.push_back((self.clone(), vec![]));
+        while let Some((g, steps)) = que.pop_front() {
+            if g.is_finished() {
+                return steps;
+            }
+            if r.try_recv().is_ok() {
+                return vec![];
+            }
+            if visited.contains(&g) {
+                continue;
+            }
+            visited.insert(g.clone());
+            for command in [
+                GameCommand::Up,
+                GameCommand::Down,
+                GameCommand::Left,
+                GameCommand::Right,
+            ] {
+                let mut new_g = g.clone();
+                let _ = new_g.execute(command);
+                if !visited.contains(&new_g) {
+                    let mut new_steps = steps.clone();
+                    new_steps.push(command);
+                    que.push_back((new_g, new_steps));
+                }
+            }
+        }
+        vec![]
     }
 }
 
