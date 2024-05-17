@@ -74,14 +74,13 @@ impl Screen for LevelSelectorScreen {
         event: Option<crossterm::event::Event>,
     ) -> super::screen::ScreenTransition {
         let original_cur = self.cur;
-        match event {
-            Some(Event::Key(event)) => match event.code {
+        if let Some(Event::Key(event)) = event {
+            match event.code {
                 KeyCode::Up => self.cur = if self.cur == 0 { 0 } else { self.cur - 1 },
                 KeyCode::Down => self.cur = (self.cur + 1).min(self.levels.len() - 1),
                 _ => {}
-            },
-            _ => {}
-        };
+            }
+        }
         if self.cur != original_cur {
             let _ = queue!(
                 stdout(),

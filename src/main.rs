@@ -1,25 +1,22 @@
-use std::cell::RefCell;
-use std::io::{stdout, Write};
-use std::rc::Rc;
-use std::thread;
-use std::time::Duration;
-
+mod game;
+mod screens;
+mod utils;
+use crate::screens::{
+    exit_screen::ExitScreen,
+    menu_screen::MenuScreen,
+    screen::{Screen, ScreenTransition},
+};
 use crossterm::cursor::{Hide, Show};
 use crossterm::event::{poll, read, Event};
 use crossterm::execute;
 use crossterm::terminal::{enable_raw_mode, Clear};
 use glob::glob;
-use screen::level_selector_screen::{FileLevel, LevelSelectorScreen};
-
-mod game;
-mod screen;
-mod utils;
-
-use crate::screen::{
-    exit_screen::ExitScreen,
-    menu_screen::MenuScreen,
-    screen::{Screen, ScreenTransition},
-};
+use screens::level_selector_screen::{FileLevel, LevelSelectorScreen};
+use std::cell::RefCell;
+use std::io::{stdout, Write};
+use std::rc::Rc;
+use std::thread;
+use std::time::Duration;
 
 fn next_event() -> Option<Event> {
     // if poll is None, none, else read
@@ -90,7 +87,6 @@ fn main() {
     let level_selector_screen = Rc::new(RefCell::new(LevelSelectorScreen::from(
         glob("levels/*.txt")
             .expect("failed to read glob pattern")
-            .into_iter()
             .filter(|v| v.is_ok())
             .map(|v| {
                 let s = v.ok().unwrap().to_str().unwrap().to_string();

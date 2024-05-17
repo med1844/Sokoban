@@ -11,7 +11,7 @@ use super::entity::Entity;
 use super::game_command::GameCommand;
 use super::game_event::GameEvent;
 use super::grid::Grid;
-use crate::screen::screen::ScreenTransition;
+use crate::screens::screen::ScreenTransition;
 use crate::utils::print_by_queue::PrintFullByQueue;
 
 #[derive(Clone, Hash, PartialEq, Eq)]
@@ -31,7 +31,7 @@ impl Board {
     pub fn new(cells: Vec<Vec<Cell>>) -> Self {
         let n = cells.len();
         let m = cells.first().unwrap_or(&vec![]).len();
-        fn get_ij(cells: &Vec<Vec<Cell>>) -> Result<(usize, usize), &str> {
+        fn get_ij(cells: &[Vec<Cell>]) -> Result<(usize, usize), &str> {
             for (i, row) in cells.iter().enumerate() {
                 for (j, val) in row.iter().enumerate() {
                     if let Some(Entity::Player) = val.entity {
@@ -90,7 +90,7 @@ impl Board {
             match self.cells[ni][nj].grid {
                 Grid::Ground | Grid::Target => {
                     if let Some(Entity::Box) = self.cells[ni][nj].entity {
-                        res.append(&mut self.push_entity((ni, nj), d.clone()));
+                        res.append(&mut self.push_entity((ni, nj), d));
                     }
                     if self.cells[ni][nj].entity.is_none() {
                         if let Some(Entity::Box) = self.cells[i][j].entity {
@@ -109,8 +109,8 @@ impl Board {
                             }
                         }
                         self.cells[ni][nj].entity = std::mem::take(&mut self.cells[i][j].entity);
-                        res.push(GameEvent::Put(i, j, self.cells[i][j].clone()));
-                        res.push(GameEvent::Put(ni, nj, self.cells[ni][nj].clone()));
+                        res.push(GameEvent::Put(i, j, self.cells[i][j]));
+                        res.push(GameEvent::Put(ni, nj, self.cells[ni][nj]));
                         self.i = ni;
                         self.j = nj;
                     }
@@ -187,7 +187,6 @@ impl From<&str> for Board {
             rows.into_iter()
                 .map(|v| {
                     v.chars()
-                        .into_iter()
                         .map(|c| match c {
                             '#' => Cell::new(Grid::Wall, None),
                             '@' => Cell::new(Grid::Ground, Some(Entity::Player)),
@@ -195,7 +194,7 @@ impl From<&str> for Board {
                             '.' => Cell::new(Grid::Target, None),
                             '+' => Cell::new(Grid::Target, Some(Entity::Player)),
                             '*' => Cell::new(Grid::Target, Some(Entity::Box)),
-                            ' ' | _ => Cell::new(Grid::Ground, None),
+                            _ => Cell::new(Grid::Ground, None),
                         })
                         .collect()
                 })

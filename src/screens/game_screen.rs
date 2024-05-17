@@ -29,18 +29,20 @@ impl Screen for GameScreen {
     fn update(&mut self, event: Option<Event>) -> ScreenTransition {
         match event {
             Some(event) => {
-                if let Event::Key(KeyEvent { code, .. }) = event {
-                    if let KeyCode::Char('o') = code {
-                        let (sender, receiver) = mpsc::channel();
-                        let g = self.g.clone();
-                        let handle = thread::spawn(move || {
-                            let solution = g.solve_interruptable(receiver);
-                            Arc::new(SolverScreen::new(g, solution))
-                        });
-                        return ScreenTransition::SwitchTo(Rc::new(RefCell::new(
-                            ComputingSolutionScreen::new(sender, handle),
-                        )));
-                    }
+                if let Event::Key(KeyEvent {
+                    code: KeyCode::Char('o'),
+                    ..
+                }) = event
+                {
+                    let (sender, receiver) = mpsc::channel();
+                    let g = self.g.clone();
+                    let handle = thread::spawn(move || {
+                        let solution = g.solve_interruptable(receiver);
+                        Arc::new(SolverScreen::new(g, solution))
+                    });
+                    return ScreenTransition::SwitchTo(Rc::new(RefCell::new(
+                        ComputingSolutionScreen::new(sender, handle),
+                    )));
                 }
                 let (transition, events) = self.g.execute(event.into());
                 // to reduce dependency & support increment printing, we use GameEvents to capture game

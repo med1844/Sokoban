@@ -41,7 +41,7 @@ impl SolverScreen {
 
 impl PrintFullByQueue for SolverScreen {
     fn print_full(&self) -> Result<(), std::io::Error> {
-        let _ = self.game_screen.print_full()?;
+        self.game_screen.print_full()?;
         queue!(
             stdout(),
             MoveToNextLine(1),
