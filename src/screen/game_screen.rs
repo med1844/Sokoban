@@ -1,16 +1,18 @@
+use super::screen::{Screen, ScreenTransition};
+use super::solver_screen::SolverScreen;
+use crate::game::game::Game;
+use crate::game::game_event::GameEvent;
+use crate::utils::print_by_queue::PrintFullByQueue;
 use crossterm::cursor::MoveTo;
 use crossterm::event::{Event, KeyCode, KeyEvent};
 use crossterm::queue;
 use crossterm::style::Print;
-
-use super::screen::{Screen, ScreenTransition};
-use crate::game::game::Game;
-use crate::game::game_event::GameEvent;
-use crate::utils::print_by_queue::PrintFullByQueue;
+use std::cell::RefCell;
 use std::io::stdout;
+use std::rc::Rc;
 
 pub struct GameScreen {
-    g: Game,
+    pub g: Game,
 }
 
 impl GameScreen {
@@ -24,7 +26,12 @@ impl Screen for GameScreen {
         match event {
             Some(event) => {
                 if let Event::Key(KeyEvent { code, .. }) = event {
-                    if let KeyCode::Char('o') = code {}
+                    if let KeyCode::Char('o') = code {
+                        // creates an auto solver screen
+                        let solver_screen =
+                            Rc::new(RefCell::new(SolverScreen::from(self.g.clone())));
+                        return ScreenTransition::SwitchTo(solver_screen);
+                    }
                 }
                 let (transition, events) = self.g.execute(event.into());
                 // to reduce dependency & support increment printing, we use GameEvents to capture game

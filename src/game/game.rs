@@ -13,13 +13,13 @@ use crate::utils::print_by_queue::PrintFullByQueue;
 
 #[derive(Clone)]
 pub struct Game {
-    cells: Vec<Vec<Cell>>,
-    n: usize,
-    m: usize,
-    i: usize,
-    j: usize,
-    num_ok_box: usize, // number of boxes on targets
-    num_box: usize,
+    pub cells: Vec<Vec<Cell>>,
+    pub n: usize,
+    pub m: usize,
+    pub i: usize,
+    pub j: usize,
+    pub num_ok_box: usize, // number of boxes on targets
+    pub num_box: usize,
 }
 
 impl Game {
