@@ -1,8 +1,8 @@
 use super::screen::{Screen, ScreenTransition};
 use super::solver_screen::SolverScreen;
-use crate::game::game::Game;
+
 use crate::utils::print_by_queue::PrintFullByQueue;
-use crossterm::cursor::{MoveTo, MoveToNextLine};
+use crossterm::cursor::{MoveTo};
 use crossterm::event::{Event, KeyCode, KeyEvent};
 use crossterm::queue;
 use crossterm::style::{PrintStyledContent, Stylize};

@@ -1,8 +1,8 @@
-use super::game_screen::{self, GameScreen};
+use super::game_screen::GameScreen;
 use super::screen::{Screen, ScreenTransition};
 use crate::{
     game::{
-        game::{Game, Solution},
+        board::{Board, Solution},
         game_command::GameCommand,
     },
     utils::print_by_queue::PrintFullByQueue,
@@ -16,7 +16,7 @@ use std::io::stdout;
 
 #[derive(Clone)]
 pub struct SolverScreen {
-    pub origin_game: Game,
+    pub origin_game: Board,
     pub game_screen: GameScreen,
     pub sol: Vec<GameCommand>,
     pub cur: usize,
@@ -26,7 +26,7 @@ pub struct SolverScreen {
 }
 
 impl SolverScreen {
-    pub fn new(game: Game, sol: Solution) -> Self {
+    pub fn new(game: Board, sol: Solution) -> Self {
         Self {
             origin_game: game.clone(),
             game_screen: GameScreen::new(game),

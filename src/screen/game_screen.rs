@@ -1,13 +1,13 @@
 use super::computing_solution_screen::ComputingSolutionScreen;
 use super::screen::{Screen, ScreenTransition};
 use super::solver_screen::SolverScreen;
-use crate::game::game::Game;
+use crate::game::board::Board;
 use crate::game::game_event::GameEvent;
 use crate::utils::print_by_queue::PrintFullByQueue;
-use crossterm::cursor::{MoveTo, MoveToNextLine};
+use crossterm::cursor::MoveTo;
 use crossterm::event::{Event, KeyCode, KeyEvent};
 use crossterm::queue;
-use crossterm::style::{Print, PrintStyledContent, Stylize};
+use crossterm::style::Print;
 use std::cell::RefCell;
 use std::io::stdout;
 use std::rc::Rc;
@@ -16,11 +16,11 @@ use std::thread;
 
 #[derive(Clone)]
 pub struct GameScreen {
-    pub g: Game,
+    pub g: Board,
 }
 
 impl GameScreen {
-    pub fn new(g: Game) -> Self {
+    pub fn new(g: Board) -> Self {
         Self { g }
     }
 }

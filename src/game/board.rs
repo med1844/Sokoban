@@ -15,7 +15,7 @@ use crate::screen::screen::ScreenTransition;
 use crate::utils::print_by_queue::PrintFullByQueue;
 
 #[derive(Clone, Hash, PartialEq, Eq)]
-pub struct Game {
+pub struct Board {
     pub cells: Vec<Vec<Cell>>,
     pub n: usize,
     pub m: usize,
@@ -27,7 +27,7 @@ pub struct Game {
 
 pub type Solution = Vec<GameCommand>;
 
-impl Game {
+impl Board {
     pub fn new(cells: Vec<Vec<Cell>>) -> Self {
         let n = cells.len();
         let m = cells.first().unwrap_or(&vec![]).len();
@@ -180,7 +180,7 @@ impl Game {
     }
 }
 
-impl From<&str> for Game {
+impl From<&str> for Board {
     fn from(value: &str) -> Self {
         let rows = value.split('\n');
         Self::new(
@@ -204,7 +204,7 @@ impl From<&str> for Game {
     }
 }
 
-impl PrintFullByQueue for Game {
+impl PrintFullByQueue for Board {
     fn print_full(&self) -> Result<(), std::io::Error> {
         queue!(
             stdout(),
