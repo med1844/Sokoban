@@ -1,11 +1,3 @@
-use crossterm::cursor::{MoveTo, MoveToNextLine};
-use crossterm::queue;
-use crossterm::terminal::Clear;
-use std::collections::HashSet;
-use std::collections::VecDeque;
-use std::io::stdout;
-use std::sync::mpsc::Receiver;
-
 use super::cell::Cell;
 use super::entity::Entity;
 use super::game_command::GameCommand;
@@ -13,6 +5,21 @@ use super::game_event::GameEvent;
 use super::grid::Grid;
 use crate::screens::screen::ScreenTransition;
 use crate::utils::print_by_queue::PrintFullByQueue;
+use crossterm::cursor::{MoveTo, MoveToNextLine};
+use crossterm::queue;
+use crossterm::terminal::Clear;
+use std::cmp::Reverse;
+use std::collections::BinaryHeap;
+use std::collections::HashSet;
+use std::collections::VecDeque;
+use std::io::stdout;
+use std::sync::mpsc::Receiver;
+
+#[derive(Clone)]
+pub struct Solution {
+    pub seq: Vec<GameCommand>,
+    pub visited_states: usize,
+}
 
 #[derive(Clone, Hash, PartialEq, Eq)]
 pub struct Board {
@@ -24,8 +31,6 @@ pub struct Board {
     pub num_ok_box: usize, // number of boxes on targets
     pub num_box: usize,
 }
-
-pub type Solution = Vec<GameCommand>;
 
 impl Board {
     pub fn new(cells: Vec<Vec<Cell>>) -> Self {
@@ -145,17 +150,100 @@ impl Board {
         )
     }
 
-    pub fn solve_interruptable(&self, r: Receiver<()>) -> Solution {
-        // this has tons of improvement! so we start with BFS first.
-        let mut que = VecDeque::new();
+    pub fn solve_interruptable(&self, r: Receiver<()>) -> Result<Solution, String> {
+        #[derive(PartialEq, Eq)]
+        struct State {
+            g: Board,
+            steps: Vec<GameCommand>, // not `Solution` for now!
+            est_rest: usize, // A*, we use summed L1 distance to nearest goal to estimate the lowerbound
+        }
+
+        impl PartialOrd for State {
+            fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+                (self.steps.len() + self.est_rest)
+                    .partial_cmp(&(other.steps.len() + other.est_rest))
+            }
+        }
+
+        impl Ord for State {
+            fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+                (self.steps.len() + self.est_rest).cmp(&(other.steps.len() + other.est_rest))
+            }
+        }
+
+        fn calc_min_dist_to_goal(g: &Board) -> Vec<Vec<Option<usize>>> {
+            // returns an array the same size as the game board, where at i, j, it stores the L1 distance to the
+            // nearest goal
+            let mut que = VecDeque::new();
+            let mut res = vec![vec![None; g.m]; g.n];
+            for (i, row) in g.cells.iter().enumerate() {
+                for (j, cell) in row.iter().enumerate() {
+                    if let Grid::Target = cell.grid {
+                        que.push_back(((i, j), 0));
+                    }
+                }
+            }
+            while let Some(((i, j), d)) = que.pop_front() {
+                if res[i][j].is_some() {
+                    // updated by previous visits
+                    continue;
+                }
+                res[i][j] = Some(d);
+                for (di, dj) in [(1, 0), (0, 1), (usize::MAX, 0), (0, usize::MAX)] {
+                    let ni = i.overflowing_add(di).0;
+                    let nj = j.overflowing_add(dj).0;
+                    if ni < g.n
+                        && nj < g.m
+                        && res[ni][nj].is_none()
+                        && matches!(g.cells[ni][nj].grid, Grid::Ground | Grid::Target)
+                    {
+                        que.push_back(((ni, nj), d + 1));
+                    }
+                }
+            }
+            res
+        }
+
+        fn calc_est_rest(
+            g: &Board,
+            min_dist_to_goal: &Vec<Vec<Option<usize>>>,
+        ) -> Result<usize, ()> {
+            let mut sum = 0;
+            for (i, row) in g.cells.iter().enumerate() {
+                for (j, cell) in row.iter().enumerate() {
+                    if let Some(Entity::Box) = cell.entity {
+                        match min_dist_to_goal[i][j] {
+                            Some(v) => sum += v,
+                            None => return Err(()), // box unreachable
+                        }
+                    }
+                }
+            }
+            Ok(sum)
+        }
+
+        let min_dist_to_goal = calc_min_dist_to_goal(self);
+
+        let mut que = BinaryHeap::new();
         let mut visited = HashSet::new();
-        que.push_back((self.clone(), vec![]));
-        while let Some((g, steps)) = que.pop_front() {
+        let res_est_rest = calc_est_rest(self, &min_dist_to_goal);
+        if res_est_rest.is_err() {
+            return Err("There exist a box such that it could never reach any goal".to_string());
+        }
+        que.push(Reverse(State {
+            g: self.clone(),
+            steps: vec![],
+            est_rest: res_est_rest.unwrap(),
+        }));
+        while let Some(Reverse(State { g, steps, .. })) = que.pop() {
             if g.is_finished() {
-                return steps;
+                return Ok(Solution {
+                    seq: steps,
+                    visited_states: visited.len(),
+                });
             }
             if r.try_recv().is_ok() {
-                return vec![];
+                return Err("Interrupted".to_string());
             }
             if visited.contains(&g) {
                 continue;
@@ -172,11 +260,15 @@ impl Board {
                 if !visited.contains(&new_g) {
                     let mut new_steps = steps.clone();
                     new_steps.push(command);
-                    que.push_back((new_g, new_steps));
+                    que.push(Reverse(State {
+                        g: new_g,
+                        steps: new_steps,
+                        est_rest: calc_est_rest(self, &min_dist_to_goal).unwrap(),
+                    }));
                 }
             }
         }
-        vec![]
+        Err("The program reached some impossible branch".to_string())
     }
 }
 

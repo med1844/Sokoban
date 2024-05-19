@@ -10,7 +10,7 @@ use crate::{
 use crossterm::cursor::{MoveTo, MoveToNextLine};
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 use crossterm::queue;
-use crossterm::style::{PrintStyledContent, Stylize};
+use crossterm::style::{style, PrintStyledContent, Stylize};
 use crossterm::terminal::{Clear, ClearType};
 use std::io::stdout;
 
@@ -18,7 +18,7 @@ use std::io::stdout;
 pub struct SolverScreen {
     pub origin_game: Board,
     pub game_screen: GameScreen,
-    pub sol: Vec<GameCommand>,
+    pub sol: Result<Solution, String>,
     pub cur: usize,
     pub play: bool,
     print_per_n_updates: u8,
@@ -26,7 +26,7 @@ pub struct SolverScreen {
 }
 
 impl SolverScreen {
-    pub fn new(game: Board, sol: Solution) -> Self {
+    pub fn new(game: Board, sol: Result<Solution, String>) -> Self {
         Self {
             origin_game: game.clone(),
             game_screen: GameScreen::new(game),
@@ -50,6 +50,14 @@ impl PrintFullByQueue for SolverScreen {
             } else {
                 PrintStyledContent("Paused".grey())
             },
+            MoveToNextLine(1),
+            PrintStyledContent(match &self.sol {
+                Ok(Solution { visited_states, .. }) => {
+                    let visited_str = format!("Visited {} states", visited_states);
+                    style(visited_str).dark_grey().italic()
+                }
+                Err(msg) => style(msg.to_owned()).red().bold(),
+            }),
             MoveToNextLine(1),
             PrintStyledContent("Press <space> to start/pause playback".dark_grey().italic()),
             MoveToNextLine(1),
@@ -90,50 +98,58 @@ impl Screen for SolverScreen {
                 _ => ScreenTransition::Continue,
             },
             _ => {
-                if self.play && self.cur < self.sol.len() {
-                    if self.cur_update == 0 {
-                        self.game_screen.update(match self.sol[self.cur] {
-                            // `game_screen` only takes in `crossterm::event::Event`, thus we have to reconstruct it...
-                            GameCommand::Up => Some(Event::Key(KeyEvent {
-                                code: KeyCode::Up,
-                                ..default_key_event
-                            })),
-                            GameCommand::Down => Some(Event::Key(KeyEvent {
-                                code: KeyCode::Down,
-                                ..default_key_event
-                            })),
-                            GameCommand::Left => Some(Event::Key(KeyEvent {
-                                code: KeyCode::Left,
-                                ..default_key_event
-                            })),
-                            GameCommand::Right => Some(Event::Key(KeyEvent {
-                                code: KeyCode::Right,
-                                ..default_key_event
-                            })),
-                            _ => Some(Event::Key(KeyEvent {
-                                code: KeyCode::Null,
-                                ..default_key_event
-                            })),
-                        });
-                        self.cur += 1;
+                match &self.sol {
+                    Ok(Solution { seq, .. }) => {
+                        if self.play && self.cur < seq.len() {
+                            if self.cur_update == 0 {
+                                self.game_screen.update(match seq[self.cur] {
+                                    // `game_screen` only takes in `crossterm::event::Event`, thus we have to reconstruct it...
+                                    GameCommand::Up => Some(Event::Key(KeyEvent {
+                                        code: KeyCode::Up,
+                                        ..default_key_event
+                                    })),
+                                    GameCommand::Down => Some(Event::Key(KeyEvent {
+                                        code: KeyCode::Down,
+                                        ..default_key_event
+                                    })),
+                                    GameCommand::Left => Some(Event::Key(KeyEvent {
+                                        code: KeyCode::Left,
+                                        ..default_key_event
+                                    })),
+                                    GameCommand::Right => Some(Event::Key(KeyEvent {
+                                        code: KeyCode::Right,
+                                        ..default_key_event
+                                    })),
+                                    _ => Some(Event::Key(KeyEvent {
+                                        code: KeyCode::Null,
+                                        ..default_key_event
+                                    })),
+                                });
+                                self.cur += 1;
+                            }
+                            self.cur_update += 1;
+                            if self.cur_update >= self.print_per_n_updates {
+                                self.cur_update -= self.print_per_n_updates;
+                            }
+                        }
+                        // update play status
+                        let h = self.game_screen.g.n;
+                        let _ = queue!(stdout(), MoveTo(0, h as u16), MoveToNextLine(1));
+                        let _ = queue!(
+                            stdout(),
+                            if self.play && self.cur < seq.len() {
+                                PrintStyledContent("Playing".green())
+                            } else {
+                                PrintStyledContent("Paused ".grey())
+                            },
+                        );
+                        ScreenTransition::Continue
                     }
-                    self.cur_update += 1;
-                    if self.cur_update >= self.print_per_n_updates {
-                        self.cur_update -= self.print_per_n_updates;
+                    Err(msg) => {
+                        let _ = queue!(stdout(), PrintStyledContent(style(msg).red().bold()));
+                        ScreenTransition::Continue
                     }
                 }
-                // update play status
-                let h = self.game_screen.g.n;
-                let _ = queue!(stdout(), MoveTo(0, h as u16), MoveToNextLine(1));
-                let _ = queue!(
-                    stdout(),
-                    if self.play && self.cur < self.sol.len() {
-                        PrintStyledContent("Playing".green())
-                    } else {
-                        PrintStyledContent("Paused ".grey())
-                    }
-                );
-                ScreenTransition::Continue
             }
         }
     }

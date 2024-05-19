@@ -44,6 +44,7 @@ impl Screen for GameScreen {
                         ComputingSolutionScreen::new(sender, handle),
                     )));
                 }
+                // TODO refactor execute to not return screen transition
                 let (transition, events) = self.g.execute(event.into());
                 // to reduce dependency & support increment printing, we use GameEvents to capture game
                 // internal changes, and let Screens utilize these events.
