@@ -17,7 +17,7 @@ struct State {
 
 impl PartialOrd for State {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        (self.steps.len() + self.est_rest).partial_cmp(&(other.steps.len() + other.est_rest))
+        Some(self.cmp(other))
     }
 }
 
@@ -104,9 +104,43 @@ impl<'a> Solver<'a> {
         let mut visited = HashSet::new();
         let mut res = vec![];
         que.push_back((g.clone(), vec![]));
+        // stop search when res is the same size as the number of empty grids around all boxes
+        let target_len = g
+            .cells
+            .iter()
+            .enumerate()
+            .map(|(i, row)| {
+                row.iter()
+                    .enumerate()
+                    .filter(|(_j, cell)| matches!(cell.entity, Some(Entity::Box)))
+                    .map(|(j, _cell)| {
+                        [(usize::MAX, 0), (1, 0), (0, usize::MAX), (0, 1)]
+                            .map(|(di, dj)| {
+                                let ni = i.overflowing_add(di).0;
+                                let nj = j.overflowing_add(dj).0;
+                                let new_cell = g.cells[ni][nj];
+                                if ni < g.n
+                                    && nj < g.m
+                                    && matches!(new_cell.grid, Grid::Ground | Grid::Target)
+                                    && matches!(new_cell.entity, Some(Entity::Player) | None)
+                                {
+                                    1
+                                } else {
+                                    0
+                                }
+                            })
+                            .into_iter()
+                            .sum::<usize>()
+                    })
+                    .sum::<usize>()
+            })
+            .sum::<usize>();
         while let Some((h, steps)) = que.pop_front() {
             if r.try_recv().is_ok() {
                 return vec![];
+            }
+            if res.len() == target_len {
+                break;
             }
             if visited.contains(&h) {
                 continue;
@@ -191,5 +225,19 @@ impl<'a> Solver<'a> {
             }
         }
         Err("The program reached some impossible branch".to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Board;
+
+    #[test]
+    fn test_next_pushes() {
+        let g = Board::from(
+            "#######\n\
+             #.$@$.#\n\
+             #######",
+        );
     }
 }

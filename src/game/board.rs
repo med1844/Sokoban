@@ -117,14 +117,13 @@ impl Board {
         if self.is_finished() {
             return vec![];
         }
-        let events = match command {
+        match command {
             BoardCommand::Up => self.push_entity((self.i, self.j), (usize::MAX, 0)),
             BoardCommand::Down => self.push_entity((self.i, self.j), (1, 0)),
             BoardCommand::Left => self.push_entity((self.i, self.j), (0, usize::MAX)),
             BoardCommand::Right => self.push_entity((self.i, self.j), (0, 1)),
             _ => vec![],
-        };
-        events
+        }
     }
 }
 

@@ -65,23 +65,24 @@ impl Screen for ComputingSolutionScreen {
                                         screen,
                                     )));
                                 }
-                                Err(_) => self.status = Status::Err,
+                                Err(_) => {
+                                    let _ = queue!(
+                                        stdout(),
+                                        PrintStyledContent(
+                                            "The solver subprocess failed, please press <q> to return to the game"
+                                                .red()
+                                                .bold()
+                                        )
+                                    );
+                                    self.status = Status::Err;
+                                }
                             }
                         }
                     }
                 }
             }
             Status::Ok => return ScreenTransition::Back,
-            Status::Err => {
-                let _ = queue!(
-                    stdout(),
-                    PrintStyledContent(
-                        "The solver subprocess failed, please press <q> to return to the game"
-                            .red()
-                            .bold()
-                    )
-                );
-            }
+            Status::Err => {}
         }
         match event {
             Some(Event::Key(KeyEvent {

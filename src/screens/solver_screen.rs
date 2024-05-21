@@ -142,10 +142,7 @@ impl Screen for SolverScreen {
                         );
                         ScreenTransition::Continue
                     }
-                    Err(msg) => {
-                        let _ = queue!(stdout(), PrintStyledContent(style(msg).red().bold()));
-                        ScreenTransition::Continue
-                    }
+                    Err(_) => ScreenTransition::Continue,
                 }
             }
         }
