@@ -96,7 +96,7 @@ impl<'a> Solver<'a> {
 
     fn get_next_pushes(
         g: &Board,
-        r: &Receiver<()>,
+        r: &Option<Receiver<()>>,
     ) -> Vec<(Board, Vec<BoardCommand>, BoardCommand)> {
         // figure out all possible one push next steps, i.e. closure of walk around
         // returns (State, command to push one box along one direction)
@@ -136,8 +136,10 @@ impl<'a> Solver<'a> {
             })
             .sum::<usize>();
         while let Some((h, steps)) = que.pop_front() {
-            if r.try_recv().is_ok() {
-                return vec![];
+            if let Some(r) = r {
+                if r.try_recv().is_ok() {
+                    return vec![];
+                }
             }
             if res.len() == target_len {
                 break;
@@ -173,7 +175,7 @@ impl<'a> Solver<'a> {
         res
     }
 
-    pub fn solve(&self, r: Receiver<()>) -> Result<Solution, String> {
+    pub fn solve(&self, r: Option<Receiver<()>>) -> Result<Solution, String> {
         // basically A*
         let mut que = BinaryHeap::new();
         let mut visited = HashSet::new();
@@ -193,8 +195,10 @@ impl<'a> Solver<'a> {
                     visited_states: visited.len(),
                 });
             }
-            if r.try_recv().is_ok() {
-                return Err("Interrupted".to_string());
+            if let Some(r) = &r {
+                if r.try_recv().is_ok() {
+                    return Err("Interrupted".to_string());
+                }
             }
             if visited.contains(&h) {
                 continue;
@@ -231,6 +235,7 @@ impl<'a> Solver<'a> {
 #[cfg(test)]
 mod tests {
     use super::Board;
+    use super::Solver;
 
     #[test]
     fn test_next_pushes() {
@@ -239,5 +244,6 @@ mod tests {
              #.$@$.#\n\
              #######",
         );
+        Solver::get_next_pushes(&g, &None);
     }
 }

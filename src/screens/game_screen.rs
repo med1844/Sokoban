@@ -55,7 +55,7 @@ impl Screen for BoardScreen {
                 let g = self.g.clone();
                 let handle = thread::spawn(move || {
                     let solver = Solver::new(&g);
-                    let solution = solver.solve(receiver);
+                    let solution = solver.solve(Some(receiver));
                     Arc::new(SolverScreen::new(g, solution))
                 });
                 ScreenTransition::SwitchTo(Rc::new(RefCell::new(ComputingSolutionScreen::new(
