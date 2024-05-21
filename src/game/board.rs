@@ -1,10 +1,13 @@
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
+
 use super::board_command::BoardCommand;
 use super::board_event::BoardEvent;
 use super::cell::Cell;
 use super::entity::Entity;
 use super::grid::Grid;
 
-#[derive(Clone, Hash, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct Board {
     pub cells: Vec<Vec<Cell>>,
     pub n: usize,
@@ -13,6 +16,17 @@ pub struct Board {
     pub j: usize,
     pub num_ok_box: usize, // number of boxes on targets
     pub num_box: usize,
+    grids_hash: usize,
+}
+
+impl Hash for Board {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        for row in self.cells.iter() {
+            for cell in row.iter() {
+                cell.entity.hash(state);
+            }
+        }
+    }
 }
 
 impl Board {
@@ -54,6 +68,15 @@ impl Board {
                     .sum::<usize>()
             })
             .sum();
+        let grids_hash = {
+            let mut s = DefaultHasher::new();
+            for row in cells.iter() {
+                for cell in row.iter() {
+                    cell.grid.hash(&mut s);
+                }
+            }
+            s.finish() as usize
+        };
         match get_ij(&cells) {
             Ok((i, j)) => Self {
                 cells,
@@ -63,6 +86,7 @@ impl Board {
                 j,
                 num_ok_box,
                 num_box,
+                grids_hash,
             },
             Err(e) => panic!("{}", e),
         }
