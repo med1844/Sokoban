@@ -3,29 +3,27 @@ use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
 
 #[derive(Copy, Clone, PartialEq, Eq)]
-pub enum GameCommand {
+pub enum BoardCommand {
     Null,
     Up,
     Down,
     Left,
     Right,
-    Quit,
 }
 
-impl From<KeyEvent> for GameCommand {
+impl From<KeyEvent> for BoardCommand {
     fn from(value: KeyEvent) -> Self {
         match value.code {
             KeyCode::Left => Self::Left,
             KeyCode::Right => Self::Right,
             KeyCode::Up => Self::Up,
             KeyCode::Down => Self::Down,
-            KeyCode::Char('q') => Self::Quit,
             _ => Self::Null,
         }
     }
 }
 
-impl From<Event> for GameCommand {
+impl From<Event> for BoardCommand {
     fn from(value: Event) -> Self {
         match value {
             Event::Key(value) => value.into(),

@@ -1,6 +1,7 @@
 pub mod board;
+pub mod board_command;
+pub mod board_event;
 pub mod cell;
 pub mod entity;
-pub mod game_command;
-pub mod game_event;
 pub mod grid;
+pub mod solver;

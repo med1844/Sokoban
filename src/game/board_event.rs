@@ -1,6 +1,6 @@
 use super::cell::Cell;
 
-pub enum GameEvent {
+pub enum BoardEvent {
     Put(usize, usize, Cell),
     Win,
 }

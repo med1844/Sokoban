@@ -1,3 +1,12 @@
+use super::{
+    game_screen::BoardScreen,
+    screen::{Screen, ScreenTransition},
+};
+use crate::utils::print_by_queue::PrintFullByQueue;
+use crossterm::cursor::{MoveTo, MoveToNextLine};
+use crossterm::event::{Event, KeyCode};
+use crossterm::queue;
+use crossterm::style::{Print, PrintStyledContent, Stylize};
 use std::{
     cell::RefCell,
     fs::File,
@@ -5,18 +14,7 @@ use std::{
     rc::Rc,
 };
 
-use crate::utils::print_by_queue::PrintFullByQueue;
-use crossterm::cursor::{MoveTo, MoveToNextLine};
-use crossterm::event::{Event, KeyCode};
-use crossterm::queue;
-use crossterm::style::{Print, PrintStyledContent, Stylize};
-
-use super::{
-    game_screen::GameScreen,
-    screen::{Screen, ScreenTransition},
-};
-
-type LevelLoader = Box<dyn Fn() -> Result<Rc<RefCell<GameScreen>>, String>>;
+type LevelLoader = Box<dyn Fn() -> Result<Rc<RefCell<BoardScreen>>, String>>;
 
 pub struct LevelSelectorScreen {
     levels: Vec<(String, LevelLoader)>,
@@ -43,7 +41,7 @@ impl From<Vec<FileLevel>> for LevelSelectorScreen {
                 let filename = file_level.filename;
                 let loader: LevelLoader = Box::new(move || {
                     load_file(filename.clone())
-                        .map(|val| Rc::new(RefCell::new(GameScreen::new(val.as_str().into()))))
+                        .map(|val| Rc::new(RefCell::new(BoardScreen::new(val.as_str().into()))))
                         .map_err(|err| err.to_string())
                 });
                 (file_level.level_name, loader)

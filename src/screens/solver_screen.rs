@@ -1,10 +1,7 @@
-use super::game_screen::GameScreen;
+use super::game_screen::BoardScreen;
 use super::screen::{Screen, ScreenTransition};
 use crate::{
-    game::{
-        board::{Board, Solution},
-        game_command::GameCommand,
-    },
+    game::{board::Board, board_command::BoardCommand, solver::Solution},
     utils::print_by_queue::PrintFullByQueue,
 };
 use crossterm::cursor::{MoveTo, MoveToNextLine};
@@ -17,7 +14,7 @@ use std::io::stdout;
 #[derive(Clone)]
 pub struct SolverScreen {
     pub origin_game: Board,
-    pub game_screen: GameScreen,
+    pub game_screen: BoardScreen,
     pub sol: Result<Solution, String>,
     pub cur: usize,
     pub play: bool,
@@ -29,7 +26,7 @@ impl SolverScreen {
     pub fn new(game: Board, sol: Result<Solution, String>) -> Self {
         Self {
             origin_game: game.clone(),
-            game_screen: GameScreen::new(game),
+            game_screen: BoardScreen::new(game),
             sol,
             cur: 0,
             play: false,
@@ -104,19 +101,19 @@ impl Screen for SolverScreen {
                             if self.cur_update == 0 {
                                 self.game_screen.update(match seq[self.cur] {
                                     // `game_screen` only takes in `crossterm::event::Event`, thus we have to reconstruct it...
-                                    GameCommand::Up => Some(Event::Key(KeyEvent {
+                                    BoardCommand::Up => Some(Event::Key(KeyEvent {
                                         code: KeyCode::Up,
                                         ..default_key_event
                                     })),
-                                    GameCommand::Down => Some(Event::Key(KeyEvent {
+                                    BoardCommand::Down => Some(Event::Key(KeyEvent {
                                         code: KeyCode::Down,
                                         ..default_key_event
                                     })),
-                                    GameCommand::Left => Some(Event::Key(KeyEvent {
+                                    BoardCommand::Left => Some(Event::Key(KeyEvent {
                                         code: KeyCode::Left,
                                         ..default_key_event
                                     })),
-                                    GameCommand::Right => Some(Event::Key(KeyEvent {
+                                    BoardCommand::Right => Some(Event::Key(KeyEvent {
                                         code: KeyCode::Right,
                                         ..default_key_event
                                     })),
