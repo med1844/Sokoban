@@ -3,7 +3,7 @@ use crossterm::queue;
 use crossterm::style::{PrintStyledContent, Stylize};
 use std::io::stdout;
 
-#[derive(Clone, Copy, Hash, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub enum Entity {
     Player,
     Box,

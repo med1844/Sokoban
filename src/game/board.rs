@@ -7,7 +7,7 @@ use super::cell::Cell;
 use super::entity::Entity;
 use super::grid::Grid;
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Board {
     pub cells: Vec<Vec<Cell>>,
     pub n: usize,
@@ -21,6 +21,7 @@ pub struct Board {
 
 impl Hash for Board {
     fn hash<H: Hasher>(&self, state: &mut H) {
+        self.grids_hash.hash(state);
         for row in self.cells.iter() {
             for cell in row.iter() {
                 cell.entity.hash(state);

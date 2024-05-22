@@ -3,25 +3,193 @@ use super::board_command::BoardCommand;
 use super::entity::Entity;
 use super::grid::Grid;
 use std::cmp::Reverse;
+use std::collections::hash_map::DefaultHasher;
 use std::collections::BinaryHeap;
 use std::collections::HashSet;
 use std::collections::VecDeque;
+use std::fmt::Debug;
+use std::hash::{Hash, Hasher};
 use std::sync::mpsc::Receiver;
 
+#[derive(Clone)]
+struct DeltaBoard<'a> {
+    g: &'a Board, // we only care about grids in it
+    entity_vec: Vec<(usize, usize, Entity)>,
+    n: usize,
+    m: usize,
+    i: usize,
+    j: usize,
+    num_ok_box: usize, // number of boxes on targets
+    num_box: usize,
+    grids_hash: usize,
+}
+
+impl PartialEq for DeltaBoard<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        // DeltaBoard would only be used as part of search state, thus we assume grids are always the same & skip
+        // redundant checks
+        self.entity_vec == other.entity_vec
+    }
+}
+
+impl Eq for DeltaBoard<'_> {}
+
+impl Debug for DeltaBoard<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut ng = self.g.clone();
+        for row in ng.cells.iter_mut() {
+            for cell in row.iter_mut() {
+                cell.entity = None;
+            }
+        }
+        for (i, j, entity) in self.entity_vec.iter() {
+            ng.cells[*i][*j].entity = Some(entity.to_owned());
+        }
+        writeln!(f, "Board [")?;
+        for row in &ng.cells {
+            for cell in row {
+                write!(f, "{:?}", cell)?;
+            }
+            writeln!(f)?;
+        }
+        write!(f, "]")
+    }
+}
+
+impl<'a> From<&'a Board> for DeltaBoard<'a> {
+    fn from(value: &'a Board) -> Self {
+        let entity_vec = value
+            .cells
+            .iter()
+            .enumerate()
+            .flat_map(|(i, row)| {
+                row.iter()
+                    .enumerate()
+                    .map(move |(j, cell)| (i, j, cell.entity))
+            })
+            .filter_map(|(i, j, entity)| entity.map(|v| (i, j, v)))
+            .collect();
+        let grids_hash = {
+            let mut s = DefaultHasher::new();
+            for row in value.cells.iter() {
+                for cell in row.iter() {
+                    cell.grid.hash(&mut s);
+                }
+            }
+            s.finish() as usize
+        };
+
+        Self {
+            g: value,
+            entity_vec,
+            n: value.n,
+            m: value.m,
+            i: value.i,
+            j: value.j,
+            num_ok_box: value.num_ok_box,
+            num_box: value.num_box,
+            grids_hash,
+        }
+    }
+}
+
+impl Hash for DeltaBoard<'_> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.grids_hash.hash(state);
+        self.entity_vec.hash(state);
+    }
+}
+
+impl DeltaBoard<'_> {
+    fn is_finished(&self) -> bool {
+        self.num_ok_box == self.num_box
+    }
+
+    fn get_grid_at(&self, i: usize, j: usize) -> Grid {
+        self.g.cells[i][j].grid
+    }
+
+    fn get_entity_at(&self, i: usize, j: usize) -> Option<Entity> {
+        self.entity_vec.iter().find_map(|(x, y, entity)| {
+            if x == &i && y == &j {
+                Some(entity.to_owned())
+            } else {
+                None
+            }
+        })
+    }
+
+    fn push_entity(&mut self, src: (usize, usize), d: (usize, usize)) -> bool {
+        // returns true if any block has been pushed
+        let (i, j) = src;
+        let (di, dj) = d;
+        let ni = i.overflowing_add(di).0;
+        let nj = j.overflowing_add(dj).0;
+        if ni < self.n && nj < self.m {
+            match self.get_grid_at(ni, nj) {
+                Grid::Ground | Grid::Target => {
+                    if let Some(Entity::Box) = self.get_entity_at(ni, nj) {
+                        let _ = self.push_entity((ni, nj), d);
+                    }
+                    if self.get_entity_at(ni, nj).is_none() {
+                        if let Some(Entity::Box) = self.get_entity_at(i, j) {
+                            self.num_ok_box = self
+                                .num_ok_box
+                                .overflowing_add(
+                                    match (self.get_grid_at(i, j), self.get_grid_at(ni, nj)) {
+                                        (Grid::Ground, Grid::Target) => 1,
+                                        (Grid::Target, Grid::Ground) => usize::MAX,
+                                        _ => 0,
+                                    },
+                                )
+                                .0;
+                        }
+                        for (x, y, _entity) in self.entity_vec.iter_mut() {
+                            if *x == i && *y == j {
+                                *x = ni;
+                                *y = nj;
+                                break;
+                            }
+                        }
+                        self.i = ni;
+                        self.j = nj;
+                        true
+                    } else {
+                        false
+                    }
+                }
+                _ => false,
+            }
+        } else {
+            false
+        }
+    }
+
+    fn execute(&mut self, command: BoardCommand) -> bool {
+        match command {
+            BoardCommand::Up => self.push_entity((self.i, self.j), (usize::MAX, 0)),
+            BoardCommand::Down => self.push_entity((self.i, self.j), (1, 0)),
+            BoardCommand::Left => self.push_entity((self.i, self.j), (0, usize::MAX)),
+            BoardCommand::Right => self.push_entity((self.i, self.j), (0, 1)),
+            _ => false,
+        }
+    }
+}
+
 #[derive(PartialEq, Eq)]
-struct State {
-    g: Board,
+struct State<'a> {
+    g: DeltaBoard<'a>,
     steps: Vec<BoardCommand>, // not `Solution` for now!
     est_rest: usize, // A*, we use summed L1 distance to nearest goal to estimate the lowerbound
 }
 
-impl PartialOrd for State {
+impl PartialOrd for State<'_> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl Ord for State {
+impl Ord for State<'_> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         (self.steps.len() + self.est_rest).cmp(&(other.steps.len() + other.est_rest))
     }
@@ -79,62 +247,52 @@ impl<'a> Solver<'a> {
         }
     }
 
-    fn calc_est_rest(&self, board: &Board) -> Result<usize, ()> {
+    fn calc_est_rest(&self, board: &DeltaBoard<'_>) -> Result<usize, ()> {
         let mut sum = 0;
-        for (i, row) in board.cells.iter().enumerate() {
-            for (j, cell) in row.iter().enumerate() {
-                if let Some(Entity::Box) = cell.entity {
-                    match self.min_dist_to_goal[i][j] {
-                        Some(v) => sum += v,
-                        None => return Err(()), // box unreachable
-                    }
-                }
+        for (i, j, _entity) in board.entity_vec.iter() {
+            match self.min_dist_to_goal[*i][*j] {
+                Some(v) => sum += v,
+                None => return Err(()), // box unreachable
             }
         }
         Ok(sum)
     }
 
     fn get_next_pushes(
-        g: &Board,
+        g: &DeltaBoard<'a>,
         r: &Option<Receiver<()>>,
-    ) -> Vec<(Board, Vec<BoardCommand>, BoardCommand)> {
+    ) -> Vec<(DeltaBoard<'a>, Vec<BoardCommand>, BoardCommand)> {
         // figure out all possible one push next steps, i.e. closure of walk around
         // returns (State, command to push one box along one direction)
         let mut que = VecDeque::new();
         let mut visited = HashSet::new();
         let mut res = vec![];
         que.push_back((g.clone(), vec![]));
-        // stop search when res is the same size as the number of empty grids around all boxes
+        // stop search when the length of `res` has the same number of empty grids around all boxes
         let target_len = g
-            .cells
+            .entity_vec
             .iter()
-            .enumerate()
-            .map(|(i, row)| {
-                row.iter()
-                    .enumerate()
-                    .filter(|(_j, cell)| matches!(cell.entity, Some(Entity::Box)))
-                    .map(|(j, _cell)| {
-                        [(usize::MAX, 0), (1, 0), (0, usize::MAX), (0, 1)]
-                            .map(|(di, dj)| {
-                                let ni = i.overflowing_add(di).0;
-                                let nj = j.overflowing_add(dj).0;
-                                let new_cell = g.cells[ni][nj];
-                                if ni < g.n
-                                    && nj < g.m
-                                    && matches!(new_cell.grid, Grid::Ground | Grid::Target)
-                                    && matches!(new_cell.entity, Some(Entity::Player) | None)
-                                {
-                                    1
-                                } else {
-                                    0
-                                }
-                            })
-                            .into_iter()
-                            .sum::<usize>()
+            .filter(|(_i, _j, entity)| matches!(entity, Entity::Box))
+            .map(|(i, j, _entity)| {
+                [(usize::MAX, 0), (1, 0), (0, usize::MAX), (0, 1)]
+                    .map(|(di, dj)| {
+                        let ni = i.overflowing_add(di).0;
+                        let nj = j.overflowing_add(dj).0;
+                        if ni < g.n
+                            && nj < g.m
+                            && matches!(g.get_grid_at(ni, nj), Grid::Ground | Grid::Target)
+                            && matches!(g.get_entity_at(ni, nj), Some(Entity::Player) | None)
+                        {
+                            1
+                        } else {
+                            0
+                        }
                     })
+                    .into_iter()
                     .sum::<usize>()
             })
             .sum::<usize>();
+
         while let Some((h, steps)) = que.pop_front() {
             if let Some(r) = r {
                 if r.try_recv().is_ok() {
@@ -159,7 +317,7 @@ impl<'a> Solver<'a> {
             {
                 let ni = h.i.overflowing_add(di).0;
                 let nj = h.j.overflowing_add(dj).0;
-                if let Some(Entity::Box) = h.cells[ni][nj].entity {
+                if let Some(Entity::Box) = h.get_entity_at(ni, nj) {
                     res.push((h.clone(), steps.clone(), command));
                 } else {
                     let mut new_g = h.clone();
@@ -179,12 +337,13 @@ impl<'a> Solver<'a> {
         // basically A*
         let mut que = BinaryHeap::new();
         let mut visited = HashSet::new();
-        let res_est_rest = self.calc_est_rest(self.board);
+        let init_delta_board = self.board.into();
+        let res_est_rest = self.calc_est_rest(&init_delta_board);
         if res_est_rest.is_err() {
             return Err("There exist a box such that it could never reach any goal".to_string());
         }
         que.push(Reverse(State {
-            g: self.board.clone(),
+            g: init_delta_board,
             steps: vec![],
             est_rest: res_est_rest.unwrap(),
         }));
@@ -209,7 +368,7 @@ impl<'a> Solver<'a> {
                 loop {
                     let res = new_h.execute(direction);
                     new_steps.push(direction);
-                    if res.is_empty() {
+                    if !res {
                         // we pushed to the end
                         break;
                     }
@@ -235,15 +394,94 @@ impl<'a> Solver<'a> {
 #[cfg(test)]
 mod tests {
     use super::Board;
+    use super::BoardCommand;
+    use super::DeltaBoard;
     use super::Solver;
+    use std::collections::HashSet;
 
     #[test]
-    fn test_next_pushes() {
+    fn test_execute_0() {
         let g = Board::from(
             "#######\n\
              #.$@$.#\n\
              #######",
         );
-        Solver::get_next_pushes(&g, &None);
+        let mut h = DeltaBoard::from(&g);
+        h.execute(BoardCommand::Left);
+        assert_eq!(
+            h,
+            (&Board::from(
+                "#######\n\
+                 #*@ $.#\n\
+                 #######",
+            ))
+                .into()
+        )
+    }
+
+    #[test]
+    fn test_next_pushes_0() {
+        let g = Board::from(
+            "#######\n\
+             #.$@$.#\n\
+             #######",
+        );
+        let set = Solver::get_next_pushes(&(&g).into(), &None)
+            .into_iter()
+            .map(|(_b, _steps, dir)| dir)
+            .collect::<HashSet<_>>();
+        assert_eq!(
+            set,
+            HashSet::from([BoardCommand::Left, BoardCommand::Right])
+        );
+    }
+    #[test]
+    fn test_next_pushes_1() {
+        let g = Board::from(
+            "#######\n\
+             #  .  #\n\
+             #  $  #\n\
+             #.$@$.#\n\
+             #  $  #\n\
+             #  .  #\n\
+             #######",
+        );
+        let set = Solver::get_next_pushes(&(&g).into(), &None)
+            .into_iter()
+            .map(|(_b, _steps, dir)| dir)
+            .collect::<HashSet<_>>();
+        assert_eq!(
+            set,
+            HashSet::from([
+                BoardCommand::Left,
+                BoardCommand::Right,
+                BoardCommand::Up,
+                BoardCommand::Down
+            ])
+        );
+    }
+    #[test]
+    fn test_next_pushes_2() {
+        let g = Board::from(
+            "#######\n\
+             #  .$ #\n\
+             #  @ .#\n\
+             #    $#\n\
+             #     #\n\
+             #######",
+        );
+        let set = Solver::get_next_pushes(&(&g).into(), &None)
+            .into_iter()
+            .map(|(_b, _steps, dir)| dir)
+            .collect::<HashSet<_>>();
+        assert_eq!(
+            set,
+            HashSet::from([
+                BoardCommand::Left,
+                BoardCommand::Right,
+                BoardCommand::Up,
+                BoardCommand::Down
+            ])
+        );
     }
 }

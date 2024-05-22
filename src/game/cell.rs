@@ -3,6 +3,7 @@ use super::grid::Grid;
 use crate::utils::print_by_queue::PrintFullByQueue;
 use crossterm::queue;
 use crossterm::style::{PrintStyledContent, Stylize};
+use std::fmt::Debug;
 use std::io::stdout;
 
 #[derive(Clone, Copy, Hash, PartialEq, Eq)]
@@ -30,6 +31,20 @@ impl PrintFullByQueue for Cell {
                 std::io::ErrorKind::Other,
                 "Impossible state!",
             )),
+        }
+    }
+}
+
+impl Debug for Cell {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match (self.grid, self.entity) {
+            (Grid::Wall, None) => write!(f, "#"),
+            (Grid::Ground, Some(Entity::Player)) => write!(f, "@"),
+            (Grid::Ground, Some(Entity::Box)) => write!(f, "$"),
+            (Grid::Target, None) => write!(f, "."),
+            (Grid::Target, Some(Entity::Player)) => write!(f, "+"),
+            (Grid::Target, Some(Entity::Box)) => write!(f, "*"),
+            _ => write!(f, " "),
         }
     }
 }
