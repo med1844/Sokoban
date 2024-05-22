@@ -21,7 +21,7 @@ struct DeltaBoard<'a> {
     j: usize,
     num_ok_box: usize, // number of boxes on targets
     num_box: usize,
-    grids_hash: usize,
+    entity_vec_hash: usize,
 }
 
 impl PartialEq for DeltaBoard<'_> {
@@ -68,17 +68,12 @@ impl<'a> From<&'a Board> for DeltaBoard<'a> {
                     .map(move |(j, cell)| (i, j, cell.entity))
             })
             .filter_map(|(i, j, entity)| entity.map(|v| (i, j, v)))
-            .collect();
-        let grids_hash = {
+            .collect::<Vec<_>>();
+        let entity_vec_hash = {
             let mut s = DefaultHasher::new();
-            for row in value.cells.iter() {
-                for cell in row.iter() {
-                    cell.grid.hash(&mut s);
-                }
-            }
+            entity_vec.hash(&mut s);
             s.finish() as usize
         };
-
         Self {
             g: value,
             entity_vec,
@@ -88,15 +83,14 @@ impl<'a> From<&'a Board> for DeltaBoard<'a> {
             j: value.j,
             num_ok_box: value.num_ok_box,
             num_box: value.num_box,
-            grids_hash,
+            entity_vec_hash,
         }
     }
 }
 
 impl Hash for DeltaBoard<'_> {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.grids_hash.hash(state);
-        self.entity_vec.hash(state);
+        self.entity_vec_hash.hash(state);
     }
 }
 
@@ -166,13 +160,19 @@ impl DeltaBoard<'_> {
     }
 
     fn execute(&mut self, command: BoardCommand) -> bool {
-        match command {
+        let res = match command {
             BoardCommand::Up => self.push_entity((self.i, self.j), (usize::MAX, 0)),
             BoardCommand::Down => self.push_entity((self.i, self.j), (1, 0)),
             BoardCommand::Left => self.push_entity((self.i, self.j), (0, usize::MAX)),
             BoardCommand::Right => self.push_entity((self.i, self.j), (0, 1)),
             _ => false,
+        };
+        if res {
+            let mut s = DefaultHasher::new();
+            self.entity_vec.hash(&mut s);
+            self.entity_vec_hash = s.finish() as usize;
         }
+        res
     }
 }
 
@@ -482,6 +482,33 @@ mod tests {
                 BoardCommand::Up,
                 BoardCommand::Down
             ])
+        );
+    }
+
+    #[test]
+    fn test_solve_0() {
+        let g = Board::from(
+            "#######\n\
+             #  .$ #\n\
+             #  @ .#\n\
+             #    $#\n\
+             #     #\n\
+             #######",
+        );
+        let solver = Solver::new(&g);
+        assert_eq!(
+            solver.solve(None).unwrap().seq,
+            vec![
+                BoardCommand::Right,
+                BoardCommand::Right,
+                BoardCommand::Up,
+                BoardCommand::Left,
+                BoardCommand::Down,
+                BoardCommand::Down,
+                BoardCommand::Down,
+                BoardCommand::Right,
+                BoardCommand::Up,
+            ]
         );
     }
 }
