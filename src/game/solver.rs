@@ -195,7 +195,7 @@ impl Ord for State<'_> {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Solution {
     pub seq: Vec<BoardCommand>,
     pub visited_states: usize,
@@ -448,7 +448,7 @@ impl<'a> Solver<'a> {
                 }
             }
         }
-        Err("The program reached some impossible branch".to_string())
+        Err("No solution".to_string())
     }
 }
 
@@ -570,6 +570,33 @@ mod tests {
                 BoardCommand::Right,
                 BoardCommand::Up,
             ]
+        );
+    }
+
+    #[test]
+    fn test_solve_1() {
+        let g = Board::from(
+            "#######\n\
+             #  .  #\n\
+             #  @  #\n\
+             #  $  #\n\
+             #######",
+        );
+        let solver = Solver::new(&g);
+        assert_eq!(solver.solve(None), Err("No solution".to_string()));
+    }
+
+    #[test]
+    fn test_solve_2() {
+        let g = Board::from(
+            "$###\n\
+              #@#\n\
+              ###",
+        );
+        let solver = Solver::new(&g);
+        assert_eq!(
+            solver.solve(None),
+            Err("There exist a box such that it could never reach any goal".to_string())
         );
     }
 
