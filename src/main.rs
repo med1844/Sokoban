@@ -85,7 +85,7 @@ fn main() {
     let _ = execute!(stdout(), Hide);
 
     let level_selector_screen = Rc::new(RefCell::new(LevelSelectorScreen::from(
-        glob("levels/*.txt")
+        glob("levels/**/*.txt")
             .expect("failed to read glob pattern")
             .filter(|v| v.is_ok())
             .map(|v| {
