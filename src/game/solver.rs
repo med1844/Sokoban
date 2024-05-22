@@ -204,6 +204,7 @@ pub struct Solution {
 pub struct Solver<'a> {
     board: &'a Board,
     min_dist_to_goal: Vec<Vec<Option<usize>>>,
+    insolvable: Vec<Vec<bool>>,
 }
 
 impl<'a> Solver<'a> {
@@ -240,10 +241,63 @@ impl<'a> Solver<'a> {
         res
     }
 
+    fn calc_insolvable(g: &Board) -> Vec<Vec<bool>> {
+        let mut visited = vec![vec![false; g.m]; g.n];
+        // start pulling a virtual box at all target positions
+        for (si, sj) in g
+            .cells
+            .iter()
+            .enumerate()
+            .flat_map(|(i, row)| row.iter().enumerate().map(move |(j, cell)| (i, j, cell)))
+            .filter_map(|(i, j, cell)| {
+                if let Grid::Target = cell.grid {
+                    Some((i, j))
+                } else {
+                    None
+                }
+            })
+        {
+            let mut que = VecDeque::new();
+            que.push_back((si, sj));
+            while let Some((i, j)) = que.pop_front() {
+                if visited[i][j] {
+                    continue;
+                }
+                visited[i][j] = true;
+                for (di, dj) in [(usize::MAX, 0), (1, 0), (0, usize::MAX), (0, 1)] {
+                    // next position of box
+                    let ni = i.overflowing_add(di).0;
+                    let nj = j.overflowing_add(dj).0;
+                    if ni < g.n
+                        && nj < g.m
+                        && matches!(g.cells[ni][nj].grid, Grid::Ground | Grid::Target)
+                        && !visited[ni][nj]
+                    {
+                        // next position of puller
+                        let nni = ni.overflowing_add(di).0;
+                        let nnj = nj.overflowing_add(dj).0;
+                        if nni < g.n
+                            && nnj < g.m
+                            && matches!(g.cells[nni][nnj].grid, Grid::Ground | Grid::Target)
+                        {
+                            que.push_back((ni, nj))
+                        }
+                    }
+                }
+            }
+        }
+
+        visited
+            .into_iter()
+            .map(|v| v.into_iter().map(|b| !b).collect())
+            .collect()
+    }
+
     pub fn new(g: &'a Board) -> Self {
         Self {
             board: g,
             min_dist_to_goal: Self::calc_min_dist_to_goal(g),
+            insolvable: Self::calc_insolvable(g),
         }
     }
 
@@ -366,10 +420,17 @@ impl<'a> Solver<'a> {
 
             for (mut new_h, mut new_steps, direction) in Self::get_next_pushes(&h, &r) {
                 loop {
-                    let res = new_h.execute(direction);
+                    let player_moved = new_h.execute(direction);
                     new_steps.push(direction);
-                    if !res {
-                        // we pushed to the end
+                    if !player_moved {
+                        // we can't push anymore
+                        break;
+                    }
+                    if new_h
+                        .entity_vec
+                        .iter()
+                        .any(|(i, j, _entity)| self.insolvable[*i][*j])
+                    {
                         break;
                     }
                     if visited.contains(&new_h) {
@@ -510,5 +571,27 @@ mod tests {
                 BoardCommand::Up,
             ]
         );
+    }
+
+    #[test]
+    fn test_insolvable_0() {
+        let g = Board::from(
+            "#######\n\
+             #  .$ #\n\
+             #  @ .#\n\
+             #    $#\n\
+             #     #\n\
+             #######",
+        );
+        let insolvable = vec![
+            vec![true; 7],
+            vec![true, true, false, false, false, true, true],
+            vec![true, true, false, false, false, false, true],
+            vec![true, true, false, false, false, false, true],
+            vec![true; 7],
+            vec![true; 7],
+        ];
+        let solver = Solver::new(&g);
+        assert_eq!(solver.insolvable, insolvable)
     }
 }
