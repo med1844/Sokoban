@@ -93,17 +93,31 @@ impl Board {
         }
     }
 
-    pub fn push_entity(&mut self, src: (usize, usize), d: (usize, usize)) -> Vec<BoardEvent> {
+    #[inline]
+    pub fn get_next(src: (usize, usize), d: (usize, usize)) -> (usize, usize) {
         let (i, j) = src;
         let (di, dj) = d;
         let ni = i.overflowing_add(di).0;
         let nj = j.overflowing_add(dj).0;
+        (ni, nj)
+    }
+
+    pub fn push_entity(
+        &mut self,
+        src: (usize, usize),
+        d: (usize, usize),
+        depth: usize,
+    ) -> Vec<BoardEvent> {
+        let (i, j) = src;
+        let (ni, nj) = Self::get_next(src, d);
         let mut res = vec![];
         if ni < self.n && nj < self.m {
             match self.cells[ni][nj].grid {
                 Grid::Ground | Grid::Target => {
                     if let Some(Entity::Box) = self.cells[ni][nj].entity {
-                        res.append(&mut self.push_entity((ni, nj), d));
+                        if depth > 0 {
+                            res.append(&mut self.push_entity((ni, nj), d, depth - 1));
+                        }
                     }
                     if self.cells[ni][nj].entity.is_none() {
                         if let Some(Entity::Box) = self.cells[i][j].entity {
@@ -143,10 +157,10 @@ impl Board {
             return vec![];
         }
         match command {
-            BoardCommand::Up => self.push_entity((self.i, self.j), (usize::MAX, 0)),
-            BoardCommand::Down => self.push_entity((self.i, self.j), (1, 0)),
-            BoardCommand::Left => self.push_entity((self.i, self.j), (0, usize::MAX)),
-            BoardCommand::Right => self.push_entity((self.i, self.j), (0, 1)),
+            BoardCommand::Up => self.push_entity((self.i, self.j), (usize::MAX, 0), 1),
+            BoardCommand::Down => self.push_entity((self.i, self.j), (1, 0), 1),
+            BoardCommand::Left => self.push_entity((self.i, self.j), (0, usize::MAX), 1),
+            BoardCommand::Right => self.push_entity((self.i, self.j), (0, 1), 1),
             _ => vec![],
         }
     }

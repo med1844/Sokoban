@@ -113,17 +113,17 @@ impl DeltaBoard<'_> {
         })
     }
 
-    fn push_entity(&mut self, src: (usize, usize), d: (usize, usize)) -> bool {
+    fn push_entity(&mut self, src: (usize, usize), d: (usize, usize), depth: usize) -> bool {
         // returns true if any block has been pushed
         let (i, j) = src;
-        let (di, dj) = d;
-        let ni = i.overflowing_add(di).0;
-        let nj = j.overflowing_add(dj).0;
+        let (ni, nj) = Board::get_next(src, d);
         if ni < self.n && nj < self.m {
             match self.get_grid_at(ni, nj) {
                 Grid::Ground | Grid::Target => {
                     if let Some(Entity::Box) = self.get_entity_at(ni, nj) {
-                        let _ = self.push_entity((ni, nj), d);
+                        if depth > 0 {
+                            let _ = self.push_entity((ni, nj), d, depth - 1);
+                        }
                     }
                     if self.get_entity_at(ni, nj).is_none() {
                         if let Some(Entity::Box) = self.get_entity_at(i, j) {
@@ -161,10 +161,10 @@ impl DeltaBoard<'_> {
 
     fn execute(&mut self, command: BoardCommand) -> bool {
         let res = match command {
-            BoardCommand::Up => self.push_entity((self.i, self.j), (usize::MAX, 0)),
-            BoardCommand::Down => self.push_entity((self.i, self.j), (1, 0)),
-            BoardCommand::Left => self.push_entity((self.i, self.j), (0, usize::MAX)),
-            BoardCommand::Right => self.push_entity((self.i, self.j), (0, 1)),
+            BoardCommand::Up => self.push_entity((self.i, self.j), (usize::MAX, 0), 1),
+            BoardCommand::Down => self.push_entity((self.i, self.j), (1, 0), 1),
+            BoardCommand::Left => self.push_entity((self.i, self.j), (0, usize::MAX), 1),
+            BoardCommand::Right => self.push_entity((self.i, self.j), (0, 1), 1),
             _ => false,
         };
         if res {

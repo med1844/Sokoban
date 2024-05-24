@@ -3,7 +3,7 @@ use sokoban::game::{board::Board, solver::Solver};
 use std::fs;
 
 pub fn benchmark(c: &mut Criterion) {
-    let raw_level = fs::read_to_string("levels/cognitive_3.txt").expect("Should have file");
+    let raw_level = fs::read_to_string("levels/cognitive/3.txt").expect("Should have file");
     let board = Board::from(raw_level.as_str());
     let mut group = c.benchmark_group("solve cognitive 3");
     group.measurement_time(std::time::Duration::new(20, 0));
