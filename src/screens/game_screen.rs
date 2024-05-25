@@ -54,7 +54,7 @@ impl Screen for BoardScreen {
                 let (sender, receiver) = mpsc::channel();
                 let g = self.g.clone();
                 let handle = thread::spawn(move || {
-                    let solver = Solver::new(&g);
+                    let solver = Solver::new(g.clone());
                     let solution = solver.solve(Some(receiver));
                     Arc::new(SolverScreen::new(g, solution))
                 });

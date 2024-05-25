@@ -44,7 +44,8 @@ impl Debug for Cell {
             (Grid::Target, None) => write!(f, "."),
             (Grid::Target, Some(Entity::Player)) => write!(f, "+"),
             (Grid::Target, Some(Entity::Box)) => write!(f, "*"),
-            _ => write!(f, " "),
+            (Grid::Ground, None) => write!(f, " "),
+            _ => write!(f, "!"),
         }
     }
 }

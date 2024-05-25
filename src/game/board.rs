@@ -107,47 +107,42 @@ impl Board {
         i < self.n && j < self.m
     }
 
-    pub fn push_entity(
-        &mut self,
-        src: (usize, usize),
-        d: (usize, usize),
-        depth: usize,
-    ) -> Vec<BoardEvent> {
+    pub fn push_entity(&mut self, src: (usize, usize), d: (usize, usize)) -> Vec<BoardEvent> {
         let (i, j) = src;
         let (ni, nj) = Self::get_next(src, d);
         let mut res = vec![];
-        if ni < self.n && nj < self.m {
-            match self.cells[ni][nj].grid {
-                Grid::Ground | Grid::Target => {
-                    if let Some(Entity::Box) = self.cells[ni][nj].entity {
-                        if depth > 0 {
-                            res.append(&mut self.push_entity((ni, nj), d, depth - 1));
-                        }
+        if self.pos_is_valid(ni, nj)
+            && matches!(self.cells[ni][nj].grid, Grid::Ground | Grid::Target)
+        {
+            if let Some(Entity::Box) = self.cells[ni][nj].entity {
+                let (nni, nnj) = Self::get_next((ni, nj), d);
+                if self.pos_is_valid(nni, nnj)
+                    && self.cells[nni][nnj].entity.is_none()
+                    && matches!(self.cells[nni][nnj].grid, Grid::Ground | Grid::Target)
+                {
+                    self.cells[nni][nnj].entity = self.cells[ni][nj].entity.take();
+                    self.num_ok_box = self
+                        .num_ok_box
+                        .overflowing_add(
+                            match (self.cells[ni][nj].grid, self.cells[nni][nnj].grid) {
+                                (Grid::Ground, Grid::Target) => 1,
+                                (Grid::Target, Grid::Ground) => usize::MAX,
+                                _ => 0,
+                            },
+                        )
+                        .0;
+                    if self.num_ok_box == self.num_box {
+                        res.push(BoardEvent::Win);
                     }
-                    if self.cells[ni][nj].entity.is_none() {
-                        if let Some(Entity::Box) = self.cells[i][j].entity {
-                            self.num_ok_box = self
-                                .num_ok_box
-                                .overflowing_add(
-                                    match (self.cells[i][j].grid, self.cells[ni][nj].grid) {
-                                        (Grid::Ground, Grid::Target) => 1,
-                                        (Grid::Target, Grid::Ground) => usize::MAX,
-                                        _ => 0,
-                                    },
-                                )
-                                .0;
-                            if self.num_ok_box == self.num_box {
-                                res.push(BoardEvent::Win);
-                            }
-                        }
-                        self.cells[ni][nj].entity = std::mem::take(&mut self.cells[i][j].entity);
-                        res.push(BoardEvent::Put(i, j, self.cells[i][j]));
-                        res.push(BoardEvent::Put(ni, nj, self.cells[ni][nj]));
-                        self.i = ni;
-                        self.j = nj;
-                    }
+                    res.push(BoardEvent::Put(nni, nnj, self.cells[nni][nnj]));
                 }
-                _ => {}
+            }
+            if self.cells[ni][nj].entity.is_none() {
+                self.cells[ni][nj].entity = self.cells[i][j].entity.take();
+                res.push(BoardEvent::Put(i, j, self.cells[i][j]));
+                res.push(BoardEvent::Put(ni, nj, self.cells[ni][nj]));
+                self.i = ni;
+                self.j = nj;
             }
         }
         res
@@ -162,12 +157,27 @@ impl Board {
             return vec![];
         }
         match command {
-            BoardCommand::Up => self.push_entity((self.i, self.j), (usize::MAX, 0), 1),
-            BoardCommand::Down => self.push_entity((self.i, self.j), (1, 0), 1),
-            BoardCommand::Left => self.push_entity((self.i, self.j), (0, usize::MAX), 1),
-            BoardCommand::Right => self.push_entity((self.i, self.j), (0, 1), 1),
+            BoardCommand::Up => self.push_entity((self.i, self.j), (usize::MAX, 0)),
+            BoardCommand::Down => self.push_entity((self.i, self.j), (1, 0)),
+            BoardCommand::Left => self.push_entity((self.i, self.j), (0, usize::MAX)),
+            BoardCommand::Right => self.push_entity((self.i, self.j), (0, 1)),
             _ => vec![],
         }
+    }
+
+    pub fn complementary(&self) -> Self {
+        let mut new_board = self.clone();
+        for (i, row) in self.cells.iter().enumerate() {
+            for (j, cell) in row.iter().enumerate() {
+                if let Some(Entity::Box) = cell.entity {
+                    new_board.cells[i][j].grid = Grid::Target;
+                }
+                if let Grid::Target = cell.grid {
+                    new_board.cells[i][j].entity = Some(Entity::Box);
+                }
+            }
+        }
+        new_board
     }
 }
 

@@ -5,6 +5,7 @@ use super::grid::Grid;
 use std::cmp::Reverse;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::BinaryHeap;
+use std::collections::HashMap;
 use std::collections::HashSet;
 use std::collections::VecDeque;
 use std::fmt::Debug;
@@ -15,8 +16,6 @@ use std::sync::mpsc::Receiver;
 struct DeltaBoard<'a> {
     g: &'a Board, // we only care about grids in it
     entity_vec: Vec<(usize, usize, Entity)>,
-    n: usize,
-    m: usize,
     i: usize,
     j: usize,
     num_ok_box: usize, // number of boxes on targets
@@ -77,8 +76,6 @@ impl<'a> From<&'a Board> for DeltaBoard<'a> {
         Self {
             g: value,
             entity_vec,
-            n: value.n,
-            m: value.m,
             i: value.i,
             j: value.j,
             num_ok_box: value.num_ok_box,
@@ -118,22 +115,19 @@ impl DeltaBoard<'_> {
         })
     }
 
-    fn push_entity(
-        &mut self,
-        src: (usize, usize),
-        d: (usize, usize),
-    ) -> (Option<(usize, usize)>, bool) {
+    fn push_entity(&mut self, d: (usize, usize)) -> (Option<(usize, usize)>, bool) {
         // returns Some(coord) if any block has been pushed
-        let (i, j) = src;
-        let (ni, nj) = Board::get_next(src, d);
+        let (i, j) = (self.i, self.j);
+        let (ni, nj) = Board::get_next((i, j), d);
         let mut new_box_pos = None;
         let mut player_moved = false;
-        let is_valid = |i: usize, j: usize| i < self.n && j < self.m;
-        if is_valid(ni, nj) && matches!(self.get_grid_at(ni, nj), Grid::Ground | Grid::Target) {
+        if self.g.pos_is_valid(ni, nj)
+            && matches!(self.get_grid_at(ni, nj), Grid::Ground | Grid::Target)
+        {
             // if there's a box, try to push it first
             if matches!(self.get_entity_at(ni, nj), Some(Entity::Box)) {
                 let (nni, nnj) = Board::get_next((ni, nj), d);
-                if is_valid(nni, nnj)
+                if self.g.pos_is_valid(nni, nnj)
                     && matches!(self.get_grid_at(nni, nnj), Grid::Ground | Grid::Target)
                     && self.get_entity_at(nni, nnj).is_none()
                 {
@@ -174,12 +168,12 @@ impl DeltaBoard<'_> {
         (new_box_pos, player_moved)
     }
 
-    fn execute(&mut self, command: BoardCommand) -> (Option<(usize, usize)>, bool) {
+    fn push(&mut self, command: BoardCommand) -> (Option<(usize, usize)>, bool) {
         let res = match command {
-            BoardCommand::Up => self.push_entity((self.i, self.j), (usize::MAX, 0)),
-            BoardCommand::Down => self.push_entity((self.i, self.j), (1, 0)),
-            BoardCommand::Left => self.push_entity((self.i, self.j), (0, usize::MAX)),
-            BoardCommand::Right => self.push_entity((self.i, self.j), (0, 1)),
+            BoardCommand::Up => self.push_entity((usize::MAX, 0)),
+            BoardCommand::Down => self.push_entity((1, 0)),
+            BoardCommand::Left => self.push_entity((0, usize::MAX)),
+            BoardCommand::Right => self.push_entity((0, 1)),
             _ => (None, false),
         };
         if !matches!(res, (None, false)) {
@@ -188,6 +182,57 @@ impl DeltaBoard<'_> {
             self.entity_vec_hash = s.finish() as usize;
         }
         res
+    }
+
+    fn pull_entity(
+        &mut self,
+        d: (usize, usize),
+        box_d: (usize, usize),
+    ) -> (Option<(usize, usize)>, bool) {
+        let (ni, nj) = Board::get_next((self.i, self.j), d);
+        let mut new_box_pos = None;
+        let mut player_moved = false;
+        if self.get_entity_at(ni, nj).is_none()
+            && matches!(self.get_grid_at(ni, nj), Grid::Ground | Grid::Target)
+        {
+            for (x, y, _entity) in self.entity_vec.iter_mut() {
+                if *x == self.i && *y == self.j {
+                    *x = ni;
+                    *y = nj;
+                    break;
+                }
+            }
+            let (bi, bj) = Board::get_next((self.i, self.j), box_d);
+            if matches!(self.get_grid_at(bi, bj), Grid::Ground | Grid::Target) {
+                if let Some(Entity::Box) = self.get_entity_at(bi, bj) {
+                    for (x, y, _entity) in self.entity_vec.iter_mut() {
+                        if *x == bi && *y == bj {
+                            *x = self.i;
+                            *y = self.j;
+                            new_box_pos = Some((self.i, self.j));
+                            break;
+                        }
+                    }
+                }
+            }
+            self.i = ni;
+            self.j = nj;
+            player_moved = true;
+        }
+        (new_box_pos, player_moved)
+    }
+
+    fn pull(&mut self, command: BoardCommand) -> (Option<(usize, usize)>, bool) {
+        // you may notice the direction user goes is the opposite of BoardCommand
+        // since we are doing bi-directional, this is basically undo-ing stuff
+        // also no need to reverse direction when concat solution and when go thru next state space
+        match command {
+            BoardCommand::Down => self.pull_entity((usize::MAX, 0), (1, 0)),
+            BoardCommand::Up => self.pull_entity((1, 0), (usize::MAX, 0)),
+            BoardCommand::Right => self.pull_entity((0, usize::MAX), (0, 1)),
+            BoardCommand::Left => self.pull_entity((0, 1), (0, usize::MAX)),
+            BoardCommand::Null => (None, false),
+        }
     }
 }
 
@@ -224,19 +269,26 @@ enum Deadlock {
     Yes,
 }
 
+// in bidirectional search, if we visited a node originated from push, we color it to be push
+#[derive(PartialEq, Eq, Clone, Copy)]
+enum Color {
+    Push,
+    Pull,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Solution {
     pub seq: Vec<BoardCommand>,
     pub visited_states: usize,
 }
 
-pub struct Solver<'a> {
-    board: &'a Board,
-    min_dist_to_goal: Vec<Vec<Option<usize>>>,
+pub struct Solver {
+    board: Board,
+    compl: Board,
     insolvable: Vec<Vec<bool>>,
 }
 
-impl<'a> Solver<'a> {
+impl Solver {
     fn calc_min_dist_to_goal(g: &Board) -> Vec<Vec<Option<usize>>> {
         // returns an array the same size as the game board, where at i, j, it stores the L1 distance to the
         // nearest goal
@@ -316,26 +368,36 @@ impl<'a> Solver<'a> {
             .collect()
     }
 
-    pub fn new(g: &'a Board) -> Self {
+    pub fn new(g: Board) -> Self {
+        let insolvable = Self::calc_insolvable(&g);
+        let compl = g.complementary();
+
         Self {
             board: g,
-            min_dist_to_goal: Self::calc_min_dist_to_goal(g),
-            insolvable: Self::calc_insolvable(g),
+            compl,
+            insolvable,
         }
     }
 
-    fn calc_est_rest(&self, board: &DeltaBoard<'_>) -> Result<usize, ()> {
+    fn calc_est_rest(
+        board: &DeltaBoard<'_>,
+        min_dist_to_goal: &Vec<Vec<Option<usize>>>,
+    ) -> Result<usize, String> {
         let mut sum = 0;
         for (i, j, _entity) in board.entity_vec.iter() {
-            match self.min_dist_to_goal[*i][*j] {
+            match min_dist_to_goal[*i][*j] {
                 Some(v) => sum += v,
-                None => return Err(()), // box unreachable
+                None => {
+                    return Err(
+                        "There exist a box such that it could never reach any goal".to_string()
+                    )
+                } // box unreachable
             }
         }
         Ok(sum)
     }
 
-    fn get_next_pushes(
+    fn get_next_pushes<'a>(
         g: &DeltaBoard<'a>,
         r: &Option<Receiver<()>>,
     ) -> Vec<(DeltaBoard<'a>, Vec<BoardCommand>, BoardCommand)> {
@@ -394,7 +456,7 @@ impl<'a> Solver<'a> {
                     res.push((h.clone(), steps.clone(), command));
                 } else {
                     let mut new_g = h.clone();
-                    let _ = new_g.execute(command);
+                    let _ = new_g.push(command);
                     if !visited.contains(&new_g) {
                         let mut new_steps = steps.clone();
                         new_steps.push(command);
@@ -499,80 +561,122 @@ impl<'a> Solver<'a> {
     #[cfg(feature = "freeze_deadlock_check")]
     fn check_freeze_deadlock(&self, g: &DeltaBoard, box_pos: (usize, usize)) -> bool {
         let mut any_deadlock = false;
-        let mut visited = vec![vec![false; g.m]; g.n];
+        let mut visited = vec![vec![false; g.g.m]; g.g.n];
         self.check_freeze_deadlock_wrap(g, box_pos, &mut visited, &mut any_deadlock);
         any_deadlock
     }
 
     pub fn solve(&self, r: Option<Receiver<()>>) -> Result<Solution, String> {
-        // basically A*
-        let mut que = BinaryHeap::new();
-        let mut visited = HashSet::new();
-        let init_delta_board = self.board.into();
-        let res_est_rest = self.calc_est_rest(&init_delta_board);
-        if res_est_rest.is_err() {
-            return Err("There exist a box such that it could never reach any goal".to_string());
-        }
-        que.push(Reverse(State {
-            g: init_delta_board,
-            steps: vec![],
-            est_rest: res_est_rest.unwrap(),
-        }));
-        while let Some(Reverse(State { g: h, steps, .. })) = que.pop() {
-            if h.is_finished() {
-                return Ok(Solution {
-                    seq: steps,
-                    visited_states: visited.len(),
-                });
-            }
-            if let Some(r) = &r {
-                if r.try_recv().is_ok() {
-                    return Err("Interrupted".to_string());
-                }
-            }
-            if visited.contains(&h) {
-                continue;
-            }
-            visited.insert(h.clone());
+        // bidirectional A*
+        let mut push_que = BinaryHeap::new();
+        let mut pull_que = BinaryHeap::new();
+        let mut visited: HashMap<DeltaBoard, (Color, Vec<BoardCommand>)> = HashMap::new();
 
-            for (mut new_h, mut new_steps, direction) in Self::get_next_pushes(&h, &r) {
-                loop {
-                    let (_new_box_pos, player_moved) = new_h.execute(direction);
-                    new_steps.push(direction);
-                    if !player_moved {
-                        // we can't push anymore
-                        break;
+        let orig_min_dist_to_goal = Self::calc_min_dist_to_goal(&self.board);
+        let comp_min_dist_to_goal = Self::calc_min_dist_to_goal(&self.compl);
+
+        let orig_delta_board = (&self.board).into();
+        let comp_delta_board = (&self.compl).into();
+        let orig_est_rest = Self::calc_est_rest(&orig_delta_board, &orig_min_dist_to_goal)?;
+        let comp_est_rest = Self::calc_est_rest(&comp_delta_board, &comp_min_dist_to_goal)?;
+
+        push_que.push(Reverse(State {
+            g: orig_delta_board,
+            steps: vec![],
+            est_rest: orig_est_rest,
+        }));
+        pull_que.push(Reverse(State {
+            g: comp_delta_board,
+            steps: vec![],
+            est_rest: comp_est_rest,
+        }));
+        let mut ques = [push_que, pull_que];
+        let colors = [Color::Push, Color::Pull];
+        for (i, (color, min_dist_to_goal)) in colors
+            .iter()
+            .zip([orig_min_dist_to_goal, comp_min_dist_to_goal].iter())
+            .enumerate()
+            .cycle()
+        {
+            if ques.iter().all(|v| v.is_empty()) {
+                break;
+            }
+            let que = &mut ques[i];
+            if let Some(Reverse(State { g: h, steps, .. })) = que.pop() {
+                if h.is_finished() {
+                    return Ok(Solution {
+                        seq: steps,
+                        visited_states: visited.len(),
+                    });
+                }
+                if let Some(r) = &r {
+                    if r.try_recv().is_ok() {
+                        return Err("Interrupted".to_string());
                     }
-                    // check simple deadlock
-                    if new_h
-                        .entity_vec
-                        .iter()
-                        .any(|(i, j, _entity)| self.insolvable[*i][*j])
-                    {
-                        break;
-                    }
-                    // check freeze deadlock
-                    #[cfg(feature = "freeze_deadlock_check")]
-                    if let Some((ni, nj)) = new_box_pos {
-                        if self.check_freeze_deadlock(&new_h, (ni, nj)) {
-                            break;
+                }
+                if let Some((val, other_steps)) = visited.get(&h) {
+                    if val != color {
+                        let mut res = other_steps.clone();
+                        res.append(&mut steps.into_iter().rev().collect());
+                        if let Color::Pull = color {
+                            res.reverse();
                         }
-                    }
-                    if visited.contains(&new_h) {
+                        return Ok(Solution {
+                            seq: res,
+                            visited_states: visited.len(),
+                        });
+                    } else {
                         continue;
                     }
-                    que.push(Reverse(State {
-                        g: new_h.clone(),
-                        steps: {
-                            let mut concated = steps.clone();
-                            concated.append(&mut new_steps.clone());
-                            concated
-                        },
-                        est_rest: self.calc_est_rest(&new_h).unwrap(),
-                    }))
+                }
+                visited.insert(h.clone(), (*color, steps.clone()));
+
+                for (mut new_h, mut new_steps, direction) in Self::get_next_pushes(&h, &r) {
+                    loop {
+                        let (new_box_pos, player_moved) = if let Color::Push = color {
+                            new_h.push(direction)
+                        } else {
+                            new_h.pull(direction)
+                        };
+                        new_steps.push(direction);
+                        if !player_moved {
+                            // we can't push anymore
+                            break;
+                        }
+                        // check simple deadlock
+                        if new_h
+                            .entity_vec
+                            .iter()
+                            .any(|(i, j, _entity)| self.insolvable[*i][*j])
+                        {
+                            break;
+                        }
+                        // check freeze deadlock
+                        #[cfg(feature = "freeze_deadlock_check")]
+                        if let Some((ni, nj)) = new_box_pos {
+                            if self.check_freeze_deadlock(&new_h, (ni, nj)) {
+                                break;
+                            }
+                        }
+                        #[cfg(not(feature = "freeze_deadlock_check"))]
+                        let _ = new_box_pos;
+                        if visited.contains_key(&new_h) {
+                            continue;
+                        }
+                        que.push(Reverse(State {
+                            g: new_h.clone(),
+                            steps: {
+                                let mut concated = steps.clone();
+                                concated.append(&mut new_steps.clone());
+                                concated
+                            },
+                            est_rest: Self::calc_est_rest(&new_h, min_dist_to_goal)?,
+                        }))
+                    }
                 }
             }
         }
+
         Err("No solution".to_string())
     }
 }
@@ -586,14 +690,14 @@ mod tests {
     use std::collections::HashSet;
 
     #[test]
-    fn test_execute_0() {
+    fn test_push_0() {
         let g = Board::from(
             "#######\n\
              #.$@$.#\n\
              #######",
         );
         let mut h = DeltaBoard::from(&g);
-        h.execute(BoardCommand::Left);
+        h.push(BoardCommand::Left);
         assert_eq!(
             h,
             (&Board::from(
@@ -606,19 +710,59 @@ mod tests {
     }
 
     #[test]
-    fn test_execute_1() {
+    fn test_push_1() {
         let g = Board::from(
             "#########\n\
              #..$$@$.#\n\
              #########",
         );
         let mut h = DeltaBoard::from(&g);
-        h.execute(BoardCommand::Left);
+        h.push(BoardCommand::Left);
         assert_eq!(
             h,
             (&Board::from(
                 "#########\n\
                  #..$$@$.#\n\
+                 #########",
+            ))
+                .into()
+        )
+    }
+
+    #[test]
+    fn test_pull_0() {
+        let g = Board::from(
+            "#########\n\
+             #    @$.#\n\
+             #########",
+        );
+        let mut h = DeltaBoard::from(&g);
+        h.pull(BoardCommand::Right);
+        assert_eq!(
+            h,
+            (&Board::from(
+                "#########\n\
+                 #   @$ .#\n\
+                 #########",
+            ))
+                .into()
+        )
+    }
+
+    #[test]
+    fn test_pull_1() {
+        let g = Board::from(
+            "#########\n\
+             #@$    .#\n\
+             #########",
+        );
+        let mut h = DeltaBoard::from(&g);
+        h.pull(BoardCommand::Right);
+        assert_eq!(
+            h,
+            (&Board::from(
+                "#########\n\
+                 #@$    .#\n\
                  #########",
             ))
                 .into()
@@ -641,6 +785,7 @@ mod tests {
             HashSet::from([BoardCommand::Left, BoardCommand::Right])
         );
     }
+
     #[test]
     fn test_next_pushes_1() {
         let g = Board::from(
@@ -702,7 +847,7 @@ mod tests {
              #     #\n\
              #######",
         );
-        let solver = Solver::new(&g);
+        let solver = Solver::new(g);
         assert_eq!(
             solver.solve(None).unwrap().seq,
             vec![
@@ -728,7 +873,7 @@ mod tests {
              #  $  #\n\
              #######",
         );
-        let solver = Solver::new(&g);
+        let solver = Solver::new(g);
         assert_eq!(solver.solve(None), Err("No solution".to_string()));
     }
 
@@ -739,7 +884,7 @@ mod tests {
               #@#\n\
               ###",
         );
-        let solver = Solver::new(&g);
+        let solver = Solver::new(g);
         assert_eq!(
             solver.solve(None),
             Err("There exist a box such that it could never reach any goal".to_string())
@@ -756,11 +901,11 @@ mod tests {
              # *   #\n\
              #######",
         );
-        let solver = Solver::new(&g);
+        let solver = Solver::new(g);
         assert!(solver.solve(None).is_ok());
     }
-    #[test]
 
+    #[test]
     fn test_insolvable_0() {
         let g = Board::from(
             "#######\n\
@@ -778,7 +923,7 @@ mod tests {
             vec![true; 7],
             vec![true; 7],
         ];
-        let solver = Solver::new(&g);
+        let solver = Solver::new(g);
         assert_eq!(solver.insolvable, insolvable)
     }
 }
@@ -786,6 +931,11 @@ mod tests {
 #[cfg(test)]
 #[cfg(feature = "freeze_deadlock_check")]
 mod freeze_deadlock_tests {
+    use super::Board;
+    use super::BoardCommand;
+    use super::DeltaBoard;
+    use super::Solver;
+    use std::collections::HashSet;
 
     #[test]
     fn test_freeze_deadlock_0() {
@@ -797,7 +947,7 @@ mod freeze_deadlock_tests {
              ###    #\n\
              ########",
         );
-        let solver = Solver::new(&g);
+        let solver = Solver::new(g.clone());
         let dg = DeltaBoard::from(&g);
         assert!(!solver.check_freeze_deadlock(&dg, (2, 5)));
     }
@@ -812,7 +962,7 @@ mod freeze_deadlock_tests {
              ###    #\n\
              ########",
         );
-        let solver = Solver::new(&g);
+        let solver = Solver::new(g.clone());
         let dg = DeltaBoard::from(&g);
         assert!(solver.check_freeze_deadlock(&dg, (2, 4)));
     }
@@ -827,7 +977,7 @@ mod freeze_deadlock_tests {
              #     #\n\
              #######",
         );
-        let solver = Solver::new(&g);
+        let solver = Solver::new(g.clone());
         let dg = DeltaBoard::from(&g);
         assert!(!solver.check_freeze_deadlock(&dg, (2, 5)));
     }
@@ -842,7 +992,7 @@ mod freeze_deadlock_tests {
              # +$  #\n\
              #######",
         );
-        let solver = Solver::new(&g);
+        let solver = Solver::new(g.clone());
         let dg = DeltaBoard::from(&g);
         assert!(!solver.check_freeze_deadlock(&dg, (4, 3)));
     }
@@ -857,7 +1007,7 @@ mod freeze_deadlock_tests {
              #     #\n\
              #######",
         );
-        let solver = Solver::new(&g);
+        let solver = Solver::new(g.clone());
         let dg = DeltaBoard::from(&g);
         assert!(!solver.check_freeze_deadlock(&dg, (3, 3)));
     }
@@ -872,7 +1022,7 @@ mod freeze_deadlock_tests {
              #.$ # #\n\
              #######",
         );
-        let solver = Solver::new(&g);
+        let solver = Solver::new(g.clone());
         let dg = DeltaBoard::from(&g);
         assert!(solver.check_freeze_deadlock(&dg, (4, 3)));
     }

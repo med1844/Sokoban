@@ -10,7 +10,7 @@ pub fn benchmark(c: &mut Criterion) {
     group_1.sample_size(100);
     group_1.bench_function("solve cognitive 1", |b| {
         b.iter(|| {
-            let solver_1 = Solver::new(&board_1);
+            let solver_1 = Solver::new(board_1.clone());
             let _ = solver_1.solve(None);
         })
     });
@@ -23,7 +23,7 @@ pub fn benchmark(c: &mut Criterion) {
     group_2.sample_size(100);
     group_2.bench_function("solve cognitive 2", |b| {
         b.iter(|| {
-            let solver_2 = Solver::new(&board_2);
+            let solver_2 = Solver::new(board_2.clone());
             let _ = solver_2.solve(None);
         })
     });
@@ -36,7 +36,7 @@ pub fn benchmark(c: &mut Criterion) {
     group_3.sample_size(10);
     group_3.bench_function("solve cognitive 3", |b| {
         b.iter(|| {
-            let solver_3 = Solver::new(&board_3);
+            let solver_3 = Solver::new(board_3.clone());
             let _ = solver_3.solve(None);
         })
     });
@@ -49,7 +49,7 @@ pub fn benchmark(c: &mut Criterion) {
     group_4.sample_size(10);
     group_4.bench_function("solve cognitive 4", |b| {
         b.iter(|| {
-            let solver_4 = Solver::new(&board_4);
+            let solver_4 = Solver::new(board_4.clone());
             let _ = solver_4.solve(None);
         })
     });
