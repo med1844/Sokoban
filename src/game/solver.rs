@@ -99,6 +99,11 @@ impl DeltaBoard<'_> {
         self.num_ok_box == self.num_box
     }
 
+    #[inline]
+    pub fn pos_is_valid(&self, i: usize, j: usize) -> bool {
+        self.g.pos_is_valid(i, j)
+    }
+
     fn get_grid_at(&self, i: usize, j: usize) -> Grid {
         self.g.cells[i][j].grid
     }
@@ -113,61 +118,71 @@ impl DeltaBoard<'_> {
         })
     }
 
-    fn push_entity(&mut self, src: (usize, usize), d: (usize, usize), depth: usize) -> bool {
-        // returns true if any block has been pushed
+    fn push_entity(
+        &mut self,
+        src: (usize, usize),
+        d: (usize, usize),
+    ) -> (Option<(usize, usize)>, bool) {
+        // returns Some(coord) if any block has been pushed
         let (i, j) = src;
         let (ni, nj) = Board::get_next(src, d);
-        if ni < self.n && nj < self.m {
-            match self.get_grid_at(ni, nj) {
-                Grid::Ground | Grid::Target => {
-                    if let Some(Entity::Box) = self.get_entity_at(ni, nj) {
-                        if depth > 0 {
-                            let _ = self.push_entity((ni, nj), d, depth - 1);
+        let mut new_box_pos = None;
+        let mut player_moved = false;
+        let is_valid = |i: usize, j: usize| i < self.n && j < self.m;
+        if is_valid(ni, nj) && matches!(self.get_grid_at(ni, nj), Grid::Ground | Grid::Target) {
+            // if there's a box, try to push it first
+            if matches!(self.get_entity_at(ni, nj), Some(Entity::Box)) {
+                let (nni, nnj) = Board::get_next((ni, nj), d);
+                if is_valid(nni, nnj)
+                    && matches!(self.get_grid_at(nni, nnj), Grid::Ground | Grid::Target)
+                    && self.get_entity_at(nni, nnj).is_none()
+                {
+                    new_box_pos = Some((nni, nnj));
+                    for (x, y, _entity) in self.entity_vec.iter_mut() {
+                        if *x == ni && *y == nj {
+                            *x = nni;
+                            *y = nnj;
+                            break;
                         }
                     }
-                    if self.get_entity_at(ni, nj).is_none() {
-                        if let Some(Entity::Box) = self.get_entity_at(i, j) {
-                            self.num_ok_box = self
-                                .num_ok_box
-                                .overflowing_add(
-                                    match (self.get_grid_at(i, j), self.get_grid_at(ni, nj)) {
-                                        (Grid::Ground, Grid::Target) => 1,
-                                        (Grid::Target, Grid::Ground) => usize::MAX,
-                                        _ => 0,
-                                    },
-                                )
-                                .0;
-                        }
-                        for (x, y, _entity) in self.entity_vec.iter_mut() {
-                            if *x == i && *y == j {
-                                *x = ni;
-                                *y = nj;
-                                break;
-                            }
-                        }
+
+                    self.num_ok_box = self
+                        .num_ok_box
+                        .overflowing_add(
+                            match (self.get_grid_at(ni, nj), self.get_grid_at(nni, nnj)) {
+                                (Grid::Ground, Grid::Target) => 1,
+                                (Grid::Target, Grid::Ground) => usize::MAX,
+                                _ => 0,
+                            },
+                        )
+                        .0;
+                }
+            }
+            if self.get_entity_at(ni, nj).is_none() {
+                player_moved = true;
+                for (x, y, _entity) in self.entity_vec.iter_mut() {
+                    if *x == i && *y == j {
+                        *x = ni;
+                        *y = nj;
                         self.i = ni;
                         self.j = nj;
-                        true
-                    } else {
-                        false
+                        break;
                     }
                 }
-                _ => false,
             }
-        } else {
-            false
         }
+        (new_box_pos, player_moved)
     }
 
-    fn execute(&mut self, command: BoardCommand) -> bool {
+    fn execute(&mut self, command: BoardCommand) -> (Option<(usize, usize)>, bool) {
         let res = match command {
-            BoardCommand::Up => self.push_entity((self.i, self.j), (usize::MAX, 0), 1),
-            BoardCommand::Down => self.push_entity((self.i, self.j), (1, 0), 1),
-            BoardCommand::Left => self.push_entity((self.i, self.j), (0, usize::MAX), 1),
-            BoardCommand::Right => self.push_entity((self.i, self.j), (0, 1), 1),
-            _ => false,
+            BoardCommand::Up => self.push_entity((self.i, self.j), (usize::MAX, 0)),
+            BoardCommand::Down => self.push_entity((self.i, self.j), (1, 0)),
+            BoardCommand::Left => self.push_entity((self.i, self.j), (0, usize::MAX)),
+            BoardCommand::Right => self.push_entity((self.i, self.j), (0, 1)),
+            _ => (None, false),
         };
-        if res {
+        if !matches!(res, (None, false)) {
             let mut s = DefaultHasher::new();
             self.entity_vec.hash(&mut s);
             self.entity_vec_hash = s.finish() as usize;
@@ -193,6 +208,11 @@ impl Ord for State<'_> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         (self.steps.len() + self.est_rest).cmp(&(other.steps.len() + other.est_rest))
     }
+}
+
+enum Axis {
+    Vert,
+    Horz,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -227,10 +247,8 @@ impl<'a> Solver<'a> {
             }
             res[i][j] = Some(d);
             for (di, dj) in [(1, 0), (0, 1), (usize::MAX, 0), (0, usize::MAX)] {
-                let ni = i.overflowing_add(di).0;
-                let nj = j.overflowing_add(dj).0;
-                if ni < g.n
-                    && nj < g.m
+                let (ni, nj) = Board::get_next((i, j), (di, dj));
+                if g.pos_is_valid(ni, nj)
                     && res[ni][nj].is_none()
                     && matches!(g.cells[ni][nj].grid, Grid::Ground | Grid::Target)
                 {
@@ -266,18 +284,14 @@ impl<'a> Solver<'a> {
                 visited[i][j] = true;
                 for (di, dj) in [(usize::MAX, 0), (1, 0), (0, usize::MAX), (0, 1)] {
                     // next position of box
-                    let ni = i.overflowing_add(di).0;
-                    let nj = j.overflowing_add(dj).0;
-                    if ni < g.n
-                        && nj < g.m
+                    let (ni, nj) = Board::get_next((i, j), (di, dj));
+                    if g.pos_is_valid(ni, nj)
                         && matches!(g.cells[ni][nj].grid, Grid::Ground | Grid::Target)
                         && !visited[ni][nj]
                     {
                         // next position of puller
-                        let nni = ni.overflowing_add(di).0;
-                        let nnj = nj.overflowing_add(dj).0;
-                        if nni < g.n
-                            && nnj < g.m
+                        let (nni, nnj) = Board::get_next((ni, nj), (di, dj));
+                        if g.pos_is_valid(nni, nnj)
                             && matches!(g.cells[nni][nnj].grid, Grid::Ground | Grid::Target)
                         {
                             que.push_back((ni, nj))
@@ -327,13 +341,11 @@ impl<'a> Solver<'a> {
             .entity_vec
             .iter()
             .filter(|(_i, _j, entity)| matches!(entity, Entity::Box))
-            .map(|(i, j, _entity)| {
+            .map(|&(i, j, _entity)| {
                 [(usize::MAX, 0), (1, 0), (0, usize::MAX), (0, 1)]
                     .map(|(di, dj)| {
-                        let ni = i.overflowing_add(di).0;
-                        let nj = j.overflowing_add(dj).0;
-                        if ni < g.n
-                            && nj < g.m
+                        let (ni, nj) = Board::get_next((i, j), (di, dj));
+                        if g.pos_is_valid(ni, nj)
                             && matches!(g.get_grid_at(ni, nj), Grid::Ground | Grid::Target)
                             && matches!(g.get_entity_at(ni, nj), Some(Entity::Player) | None)
                         {
@@ -346,7 +358,6 @@ impl<'a> Solver<'a> {
                     .sum::<usize>()
             })
             .sum::<usize>();
-
         while let Some((h, steps)) = que.pop_front() {
             if let Some(r) = r {
                 if r.try_recv().is_ok() {
@@ -369,8 +380,7 @@ impl<'a> Solver<'a> {
             .into_iter()
             .zip([(usize::MAX, 0), (1, 0), (0, usize::MAX), (0, 1)])
             {
-                let ni = h.i.overflowing_add(di).0;
-                let nj = h.j.overflowing_add(dj).0;
+                let (ni, nj) = Board::get_next((h.i, h.j), (di, dj));
                 if let Some(Entity::Box) = h.get_entity_at(ni, nj) {
                     res.push((h.clone(), steps.clone(), command));
                 } else {
@@ -385,6 +395,55 @@ impl<'a> Solver<'a> {
             }
         }
         res
+    }
+
+    fn check_freeze_deadlock_on_dir(
+        &self,
+        g: &DeltaBoard,
+        box_pos: (usize, usize),
+        visited: &mut HashSet<(usize, usize)>,
+        axis: Axis,
+        any_dead: &mut bool,
+    ) -> bool {
+        let it = match axis {
+            Axis::Vert => [(usize::MAX, 0), (1, 0)],
+            Axis::Horz => [(0, usize::MAX), (0, 1)],
+        }
+        .into_iter()
+        .map(|d| Board::get_next(box_pos, d))
+        .filter(|&(ni, nj)| g.pos_is_valid(ni, nj));
+        it.clone().any(|(ni, nj)| {
+            (matches!(g.get_grid_at(ni, nj), Grid::Wall) || visited.contains(&(ni, nj)))
+                // || self.insolvable[ni][nj]
+                || (matches!(g.get_entity_at(ni, nj), Some(Entity::Box))
+                    && self.check_freeze_deadlock_wrap(g, (ni, nj), visited, any_dead))
+        }) || it.clone().all(|(ni, nj)| self.insolvable[ni][nj])
+    }
+
+    fn check_freeze_deadlock_wrap(
+        &self,
+        g: &DeltaBoard,
+        box_pos: (usize, usize),
+        visited: &mut HashSet<(usize, usize)>,
+        any_dead: &mut bool,
+    ) -> bool {
+        // http://sokobano.de/wiki/index.php?title=How_to_detect_deadlocks
+        visited.insert(box_pos);
+        let res = self.check_freeze_deadlock_on_dir(g, box_pos, visited, Axis::Vert, any_dead)
+            && self.check_freeze_deadlock_on_dir(g, box_pos, visited, Axis::Horz, any_dead);
+        visited.remove(&box_pos);
+        let (i, j) = box_pos;
+        if res && matches!(g.get_grid_at(i, j), Grid::Ground) {
+            *any_dead |= true;
+        }
+        res
+    }
+
+    fn check_freeze_deadlock(&self, g: &DeltaBoard, box_pos: (usize, usize)) -> bool {
+        let mut any_dead = false;
+        let mut visited = HashSet::new();
+        self.check_freeze_deadlock_wrap(g, box_pos, &mut visited, &mut any_dead);
+        any_dead
     }
 
     pub fn solve(&self, r: Option<Receiver<()>>) -> Result<Solution, String> {
@@ -420,18 +479,25 @@ impl<'a> Solver<'a> {
 
             for (mut new_h, mut new_steps, direction) in Self::get_next_pushes(&h, &r) {
                 loop {
-                    let player_moved = new_h.execute(direction);
+                    let (new_box_pos, player_moved) = new_h.execute(direction);
                     new_steps.push(direction);
                     if !player_moved {
                         // we can't push anymore
                         break;
                     }
+                    // check simple deadlock
                     if new_h
                         .entity_vec
                         .iter()
                         .any(|(i, j, _entity)| self.insolvable[*i][*j])
                     {
                         break;
+                    }
+                    // check freeze deadlock
+                    if let Some((ni, nj)) = new_box_pos {
+                        if self.check_freeze_deadlock(&new_h, (ni, nj)) {
+                            break;
+                        }
                     }
                     if visited.contains(&new_h) {
                         continue;
@@ -481,6 +547,26 @@ mod tests {
     }
 
     #[test]
+    fn test_execute_1() {
+        let g = Board::from(
+            "#########\n\
+             #..$$@$.#\n\
+             #########",
+        );
+        let mut h = DeltaBoard::from(&g);
+        h.execute(BoardCommand::Left);
+        assert_eq!(
+            h,
+            (&Board::from(
+                "#########\n\
+                 #..$$@$.#\n\
+                 #########",
+            ))
+                .into()
+        )
+    }
+
+    #[test]
     fn test_next_pushes_0() {
         let g = Board::from(
             "#######\n\
@@ -521,6 +607,7 @@ mod tests {
             ])
         );
     }
+
     #[test]
     fn test_next_pushes_2() {
         let g = Board::from(
@@ -544,6 +631,51 @@ mod tests {
                 BoardCommand::Down
             ])
         );
+    }
+
+    #[test]
+    fn test_freeze_deadlock_0() {
+        let g = Board::from(
+            "########\n\
+             #   #  #\n\
+             #  *.$@#\n\
+             #.$*   #\n\
+             ###    #\n\
+             ########",
+        );
+        let solver = Solver::new(&g);
+        let dg = DeltaBoard::from(&g);
+        assert!(!solver.check_freeze_deadlock(&dg, (2, 5)));
+    }
+
+    #[test]
+    fn test_freeze_deadlock_1() {
+        let g = Board::from(
+            "########\n\
+             #   #  #\n\
+             #  **@ #\n\
+             #.$*   #\n\
+             ###    #\n\
+             ########",
+        );
+        let solver = Solver::new(&g);
+        let dg = DeltaBoard::from(&g);
+        assert!(solver.check_freeze_deadlock(&dg, (2, 4)));
+    }
+
+    #[test]
+    fn test_freeze_deadlock_2() {
+        let g = Board::from(
+            "#######\n\
+             #  *  #\n\
+             #    *#\n\
+             #    @#\n\
+             #     #\n\
+             #######",
+        );
+        let solver = Solver::new(&g);
+        let dg = DeltaBoard::from(&g);
+        assert!(!solver.check_freeze_deadlock(&dg, (2, 5)));
     }
 
     #[test]

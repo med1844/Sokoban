@@ -102,6 +102,11 @@ impl Board {
         (ni, nj)
     }
 
+    #[inline]
+    pub fn pos_is_valid(&self, i: usize, j: usize) -> bool {
+        i < self.n && j < self.m
+    }
+
     pub fn push_entity(
         &mut self,
         src: (usize, usize),
