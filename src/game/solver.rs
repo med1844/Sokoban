@@ -411,7 +411,7 @@ impl<'a> Solver<'a> {
         &self,
         g: &DeltaBoard,
         box_pos: (usize, usize),
-        visited: &mut Vec<Vec<bool>>,
+        visited: &mut [Vec<bool>],
         axis: Axis,
     ) -> Deadlock {
         let it = match axis {
@@ -537,7 +537,7 @@ impl<'a> Solver<'a> {
 
             for (mut new_h, mut new_steps, direction) in Self::get_next_pushes(&h, &r) {
                 loop {
-                    let (_new_box_pos, player_moved) = new_h.execute(direction);
+                    let (new_box_pos, player_moved) = new_h.execute(direction);
                     new_steps.push(direction);
                     if !player_moved {
                         // we can't push anymore
@@ -558,6 +558,8 @@ impl<'a> Solver<'a> {
                             break;
                         }
                     }
+                    #[cfg(not(feature = "freeze_deadlock_check"))]
+                    let _ = new_box_pos;
                     if visited.contains(&new_h) {
                         continue;
                     }
@@ -786,7 +788,9 @@ mod tests {
 #[cfg(test)]
 #[cfg(feature = "freeze_deadlock_check")]
 mod freeze_deadlock_tests {
-
+    use super::Board;
+    use super::DeltaBoard;
+    use super::Solver;
     #[test]
     fn test_freeze_deadlock_0() {
         let g = Board::from(
