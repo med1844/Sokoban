@@ -337,7 +337,6 @@ impl<'a> Solver<'a> {
 
     fn get_next_pushes(
         g: &DeltaBoard<'a>,
-        r: &Option<Receiver<()>>,
     ) -> Vec<(DeltaBoard<'a>, Vec<BoardCommand>, BoardCommand)> {
         // figure out all possible one push next steps, i.e. closure of walk around
         // returns (State, command to push one box along one direction)
@@ -368,11 +367,6 @@ impl<'a> Solver<'a> {
             })
             .sum::<usize>();
         while let Some((h, steps)) = que.pop_front() {
-            if let Some(r) = r {
-                if r.try_recv().is_ok() {
-                    return vec![];
-                }
-            }
             if res.len() == target_len {
                 break;
             }
@@ -535,7 +529,7 @@ impl<'a> Solver<'a> {
             }
             visited.insert(h.clone());
 
-            for (mut new_h, mut new_steps, direction) in Self::get_next_pushes(&h, &r) {
+            for (mut new_h, mut new_steps, direction) in Self::get_next_pushes(&h) {
                 loop {
                     let (new_box_pos, player_moved) = new_h.execute(direction);
                     new_steps.push(direction);
@@ -634,7 +628,7 @@ mod tests {
              #.$@$.#\n\
              #######",
         );
-        let set = Solver::get_next_pushes(&(&g).into(), &None)
+        let set = Solver::get_next_pushes(&(&g).into())
             .into_iter()
             .map(|(_b, _steps, dir)| dir)
             .collect::<HashSet<_>>();
@@ -654,7 +648,7 @@ mod tests {
              #  .  #\n\
              #######",
         );
-        let set = Solver::get_next_pushes(&(&g).into(), &None)
+        let set = Solver::get_next_pushes(&(&g).into())
             .into_iter()
             .map(|(_b, _steps, dir)| dir)
             .collect::<HashSet<_>>();
@@ -679,7 +673,7 @@ mod tests {
              #     #\n\
              #######",
         );
-        let set = Solver::get_next_pushes(&(&g).into(), &None)
+        let set = Solver::get_next_pushes(&(&g).into())
             .into_iter()
             .map(|(_b, _steps, dir)| dir)
             .collect::<HashSet<_>>();

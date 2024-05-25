@@ -1,10 +1,10 @@
 use super::screen::{Screen, ScreenTransition};
 use super::solver_screen::SolverScreen;
-
 use crossterm::cursor::MoveTo;
 use crossterm::event::{Event, KeyCode, KeyEvent};
-use crossterm::queue;
 use crossterm::style::{PrintStyledContent, Stylize};
+use crossterm::terminal::{Clear, ClearType};
+use crossterm::{execute, queue};
 use sokoban::utils::print_by_queue::PrintFullByQueue;
 use std::cell::RefCell;
 use std::io::stdout;
@@ -91,6 +91,15 @@ impl Screen for ComputingSolutionScreen {
             })) => {
                 if let Status::Computing = self.status {
                     let _ = self.sender.send(());
+                    if let Some(handle) = self.handle.take() {
+                        let _ = execute!(
+                            stdout(),
+                            MoveTo(0, 0),
+                            Clear(ClearType::CurrentLine),
+                            PrintStyledContent("Terminating worker process...".grey().italic())
+                        );
+                        let _ = handle.join();
+                    }
                 }
                 ScreenTransition::Back
             }
