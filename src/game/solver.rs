@@ -210,9 +210,18 @@ impl Ord for State<'_> {
     }
 }
 
+#[cfg(feature = "freeze_deadlock_check")]
 enum Axis {
     Vert,
     Horz,
+}
+
+#[cfg(feature = "freeze_deadlock_check")]
+#[derive(Debug)]
+enum Deadlock {
+    No,
+    Maybe(Vec<(usize, usize)>),
+    Yes,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -397,14 +406,14 @@ impl<'a> Solver<'a> {
         res
     }
 
-    fn check_freeze_deadlock_on_dir(
+    #[cfg(feature = "freeze_deadlock_check")]
+    fn check_freeze_deadlock_on_axis(
         &self,
         g: &DeltaBoard,
         box_pos: (usize, usize),
-        visited: &mut HashSet<(usize, usize)>,
+        visited: &mut Vec<Vec<bool>>,
         axis: Axis,
-        any_dead: &mut bool,
-    ) -> bool {
+    ) -> Deadlock {
         let it = match axis {
             Axis::Vert => [(usize::MAX, 0), (1, 0)],
             Axis::Horz => [(0, usize::MAX), (0, 1)],
@@ -412,38 +421,87 @@ impl<'a> Solver<'a> {
         .into_iter()
         .map(|d| Board::get_next(box_pos, d))
         .filter(|&(ni, nj)| g.pos_is_valid(ni, nj));
-        it.clone().any(|(ni, nj)| {
-            (matches!(g.get_grid_at(ni, nj), Grid::Wall) || visited.contains(&(ni, nj)))
-                // || self.insolvable[ni][nj]
-                || (matches!(g.get_entity_at(ni, nj), Some(Entity::Box))
-                    && self.check_freeze_deadlock_wrap(g, (ni, nj), visited, any_dead))
-        }) || it.clone().all(|(ni, nj)| self.insolvable[ni][nj])
+        if it.clone().all(|(ni, nj)| {
+            matches!(g.get_grid_at(ni, nj), Grid::Ground | Grid::Target)
+                && matches!(g.get_entity_at(ni, nj), Some(Entity::Player) | None)
+        }) {
+            Deadlock::No
+        } else if it
+            .clone()
+            .any(|(ni, nj)| matches!(g.get_grid_at(ni, nj), Grid::Wall) || visited[ni][nj])
+        {
+            Deadlock::Yes
+        } else {
+            Deadlock::Maybe(
+                it.clone()
+                    .filter(|&(ni, nj)| matches!(g.get_entity_at(ni, nj), Some(Entity::Box)))
+                    .collect(),
+            )
+        }
     }
 
+    #[cfg(feature = "freeze_deadlock_check")]
     fn check_freeze_deadlock_wrap(
         &self,
         g: &DeltaBoard,
         box_pos: (usize, usize),
-        visited: &mut HashSet<(usize, usize)>,
-        any_dead: &mut bool,
+        visited: &mut Vec<Vec<bool>>,
+        any_deadlock: &mut bool,
     ) -> bool {
         // http://sokobano.de/wiki/index.php?title=How_to_detect_deadlocks
-        visited.insert(box_pos);
-        let res = self.check_freeze_deadlock_on_dir(g, box_pos, visited, Axis::Vert, any_dead)
-            && self.check_freeze_deadlock_on_dir(g, box_pos, visited, Axis::Horz, any_dead);
-        visited.remove(&box_pos);
         let (i, j) = box_pos;
-        if res && matches!(g.get_grid_at(i, j), Grid::Ground) {
-            *any_dead |= true;
+        let mut v_deadlock = self.check_freeze_deadlock_on_axis(g, box_pos, visited, Axis::Vert);
+        let mut h_deadlock = self.check_freeze_deadlock_on_axis(g, box_pos, visited, Axis::Horz);
+        let res = loop {
+            if matches!(
+                (&v_deadlock, &h_deadlock),
+                (Deadlock::No, _) | (_, Deadlock::No)
+            ) {
+                break false;
+            }
+            if matches!((&v_deadlock, &h_deadlock), (Deadlock::Yes, Deadlock::Yes)) {
+                break true;
+            }
+            if let Deadlock::Maybe(boxes) = v_deadlock {
+                // resolve maybe...
+                visited[i][j] = true;
+                match boxes.into_iter().any(|next_pos| {
+                    self.check_freeze_deadlock_wrap(g, next_pos, visited, any_deadlock)
+                }) {
+                    true => v_deadlock = Deadlock::Yes,
+                    false => v_deadlock = Deadlock::No,
+                }
+                visited[i][j] = false;
+            }
+            if *any_deadlock {
+                break true;
+            }
+            if let Deadlock::Maybe(boxes) = h_deadlock {
+                visited[i][j] = true;
+                match boxes.into_iter().any(|next_pos| {
+                    self.check_freeze_deadlock_wrap(g, next_pos, visited, any_deadlock)
+                }) {
+                    true => h_deadlock = Deadlock::Yes,
+                    false => h_deadlock = Deadlock::No,
+                }
+                visited[i][j] = false;
+            }
+            if *any_deadlock {
+                break true;
+            }
+        };
+        if res && !matches!(g.get_grid_at(i, j), Grid::Target) {
+            *any_deadlock = true;
         }
         res
     }
 
+    #[cfg(feature = "freeze_deadlock_check")]
     fn check_freeze_deadlock(&self, g: &DeltaBoard, box_pos: (usize, usize)) -> bool {
-        let mut any_dead = false;
-        let mut visited = HashSet::new();
-        self.check_freeze_deadlock_wrap(g, box_pos, &mut visited, &mut any_dead);
-        any_dead
+        let mut any_deadlock = false;
+        let mut visited = vec![vec![false; g.m]; g.n];
+        self.check_freeze_deadlock_wrap(g, box_pos, &mut visited, &mut any_deadlock);
+        any_deadlock
     }
 
     pub fn solve(&self, r: Option<Receiver<()>>) -> Result<Solution, String> {
@@ -494,6 +552,7 @@ impl<'a> Solver<'a> {
                         break;
                     }
                     // check freeze deadlock
+                    #[cfg(feature = "freeze_deadlock_check")]
                     if let Some((ni, nj)) = new_box_pos {
                         if self.check_freeze_deadlock(&new_h, (ni, nj)) {
                             break;
@@ -634,51 +693,6 @@ mod tests {
     }
 
     #[test]
-    fn test_freeze_deadlock_0() {
-        let g = Board::from(
-            "########\n\
-             #   #  #\n\
-             #  *.$@#\n\
-             #.$*   #\n\
-             ###    #\n\
-             ########",
-        );
-        let solver = Solver::new(&g);
-        let dg = DeltaBoard::from(&g);
-        assert!(!solver.check_freeze_deadlock(&dg, (2, 5)));
-    }
-
-    #[test]
-    fn test_freeze_deadlock_1() {
-        let g = Board::from(
-            "########\n\
-             #   #  #\n\
-             #  **@ #\n\
-             #.$*   #\n\
-             ###    #\n\
-             ########",
-        );
-        let solver = Solver::new(&g);
-        let dg = DeltaBoard::from(&g);
-        assert!(solver.check_freeze_deadlock(&dg, (2, 4)));
-    }
-
-    #[test]
-    fn test_freeze_deadlock_2() {
-        let g = Board::from(
-            "#######\n\
-             #  *  #\n\
-             #    *#\n\
-             #    @#\n\
-             #     #\n\
-             #######",
-        );
-        let solver = Solver::new(&g);
-        let dg = DeltaBoard::from(&g);
-        assert!(!solver.check_freeze_deadlock(&dg, (2, 5)));
-    }
-
-    #[test]
     fn test_solve_0() {
         let g = Board::from(
             "#######\n\
@@ -733,6 +747,20 @@ mod tests {
     }
 
     #[test]
+    fn test_solve_3() {
+        let g = Board::from(
+            "#######\n\
+             #     #\n\
+             # +$# #\n\
+             # **  #\n\
+             # *   #\n\
+             #######",
+        );
+        let solver = Solver::new(&g);
+        assert!(solver.solve(None).is_ok());
+    }
+    #[test]
+
     fn test_insolvable_0() {
         let g = Board::from(
             "#######\n\
@@ -752,5 +780,100 @@ mod tests {
         ];
         let solver = Solver::new(&g);
         assert_eq!(solver.insolvable, insolvable)
+    }
+}
+
+#[cfg(test)]
+#[cfg(feature = "freeze_deadlock_check")]
+mod freeze_deadlock_tests {
+
+    #[test]
+    fn test_freeze_deadlock_0() {
+        let g = Board::from(
+            "########\n\
+             #   #  #\n\
+             #  *.$@#\n\
+             #.$*   #\n\
+             ###    #\n\
+             ########",
+        );
+        let solver = Solver::new(&g);
+        let dg = DeltaBoard::from(&g);
+        assert!(!solver.check_freeze_deadlock(&dg, (2, 5)));
+    }
+
+    #[test]
+    fn test_freeze_deadlock_1() {
+        let g = Board::from(
+            "########\n\
+             #   #  #\n\
+             #  **@ #\n\
+             #.$*   #\n\
+             ###    #\n\
+             ########",
+        );
+        let solver = Solver::new(&g);
+        let dg = DeltaBoard::from(&g);
+        assert!(solver.check_freeze_deadlock(&dg, (2, 4)));
+    }
+
+    #[test]
+    fn test_freeze_deadlock_2() {
+        let g = Board::from(
+            "#######\n\
+             #  *  #\n\
+             #    *#\n\
+             #    @#\n\
+             #     #\n\
+             #######",
+        );
+        let solver = Solver::new(&g);
+        let dg = DeltaBoard::from(&g);
+        assert!(!solver.check_freeze_deadlock(&dg, (2, 5)));
+    }
+
+    #[test]
+    fn test_freeze_deadlock_3() {
+        let g = Board::from(
+            "#######\n\
+             #     #\n\
+             # .$# #\n\
+             # **  #\n\
+             # +$  #\n\
+             #######",
+        );
+        let solver = Solver::new(&g);
+        let dg = DeltaBoard::from(&g);
+        assert!(!solver.check_freeze_deadlock(&dg, (4, 3)));
+    }
+
+    #[test]
+    fn test_freeze_deadlock_4() {
+        let g = Board::from(
+            "#######\n\
+             #     #\n\
+             # **  #\n\
+             # **@ #\n\
+             #     #\n\
+             #######",
+        );
+        let solver = Solver::new(&g);
+        let dg = DeltaBoard::from(&g);
+        assert!(!solver.check_freeze_deadlock(&dg, (3, 3)));
+    }
+
+    #[test]
+    fn test_freeze_deadlock_5() {
+        let g = Board::from(
+            "#######\n\
+             #     #\n\
+             # **  #\n\
+             # **@ #\n\
+             #.$ # #\n\
+             #######",
+        );
+        let solver = Solver::new(&g);
+        let dg = DeltaBoard::from(&g);
+        assert!(solver.check_freeze_deadlock(&dg, (4, 3)));
     }
 }
