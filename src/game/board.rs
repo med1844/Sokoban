@@ -1,6 +1,3 @@
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
-
 use super::board_command::BoardCommand;
 use super::board_event::BoardEvent;
 use super::cell::Cell;
@@ -16,18 +13,6 @@ pub struct Board {
     pub j: usize,
     pub num_ok_box: usize, // number of boxes on targets
     pub num_box: usize,
-    grids_hash: usize,
-}
-
-impl Hash for Board {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.grids_hash.hash(state);
-        for row in self.cells.iter() {
-            for cell in row.iter() {
-                cell.entity.hash(state);
-            }
-        }
-    }
 }
 
 impl Board {
@@ -69,15 +54,6 @@ impl Board {
                     .sum::<usize>()
             })
             .sum();
-        let grids_hash = {
-            let mut s = DefaultHasher::new();
-            for row in cells.iter() {
-                for cell in row.iter() {
-                    cell.grid.hash(&mut s);
-                }
-            }
-            s.finish() as usize
-        };
         match get_ij(&cells) {
             Ok((i, j)) => Self {
                 cells,
@@ -87,7 +63,6 @@ impl Board {
                 j,
                 num_ok_box,
                 num_box,
-                grids_hash,
             },
             Err(e) => panic!("{}", e),
         }
@@ -169,11 +144,17 @@ impl Board {
         let mut new_board = self.clone();
         for (i, row) in self.cells.iter().enumerate() {
             for (j, cell) in row.iter().enumerate() {
-                if let Some(Entity::Box) = cell.entity {
-                    new_board.cells[i][j].grid = Grid::Target;
-                }
-                if let Grid::Target = cell.grid {
-                    new_board.cells[i][j].entity = Some(Entity::Box);
+                match (cell.entity, cell.grid) {
+                    (Some(Entity::Box), Grid::Target) => {}
+                    (Some(Entity::Box), Grid::Ground) => {
+                        new_board.cells[i][j].grid = Grid::Target;
+                        new_board.cells[i][j].entity = None;
+                    }
+                    (None, Grid::Target) => {
+                        new_board.cells[i][j].grid = Grid::Ground;
+                        new_board.cells[i][j].entity = Some(Entity::Box);
+                    }
+                    _ => {}
                 }
             }
         }
@@ -201,5 +182,32 @@ impl From<&str> for Board {
                 })
                 .collect(),
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Board;
+    #[test]
+    fn test_compl_0() {
+        let g = Board::from(
+            "#######\n\
+             #  .  #\n\
+             #  $* #\n\
+             #.$@$.#\n\
+             #  $  #\n\
+             #  .  #\n\
+             #######",
+        );
+        let h = Board::from(
+            "#######\n\
+             #  $  #\n\
+             #  .* #\n\
+             #$.@.$#\n\
+             #  .  #\n\
+             #  $  #\n\
+             #######",
+        );
+        assert_eq!(g.complementary(), h);
     }
 }

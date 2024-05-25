@@ -270,7 +270,7 @@ enum Deadlock {
 }
 
 // in bidirectional search, if we visited a node originated from push, we color it to be push
-#[derive(PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 enum Color {
     Push,
     Pull,
@@ -660,8 +660,10 @@ impl Solver {
                         }
                         #[cfg(not(feature = "freeze_deadlock_check"))]
                         let _ = new_box_pos;
-                        if visited.contains_key(&new_h) {
-                            continue;
+                        if let Some((val, _)) = visited.get(&new_h) {
+                            if val == color {
+                                continue;
+                            }
                         }
                         que.push(Reverse(State {
                             g: new_h.clone(),
@@ -764,6 +766,30 @@ mod tests {
                 "#########\n\
                  #@$    .#\n\
                  #########",
+            ))
+                .into()
+        )
+    }
+
+    #[test]
+    fn test_pull_2() {
+        let g = Board::from(
+            "###\n\
+             #$#\n\
+             #@#\n\
+             #.#\n\
+             ###",
+        );
+        let mut h = DeltaBoard::from(&g);
+        h.pull(BoardCommand::Up);
+        assert_eq!(
+            h,
+            (&Board::from(
+                "###\n\
+                 # #\n\
+                 #$#\n\
+                 #+#\n\
+                 ###",
             ))
                 .into()
         )
