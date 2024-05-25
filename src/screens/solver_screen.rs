@@ -1,14 +1,14 @@
 use super::game_screen::BoardScreen;
 use super::screen::{Screen, ScreenTransition};
-use crate::{
-    game::{board::Board, board_command::BoardCommand, solver::Solution},
-    utils::print_by_queue::PrintFullByQueue,
-};
 use crossterm::cursor::{MoveTo, MoveToNextLine};
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 use crossterm::queue;
 use crossterm::style::{style, PrintStyledContent, Stylize};
 use crossterm::terminal::{Clear, ClearType};
+use sokoban::{
+    game::{board::Board, board_command::BoardCommand, solver::Solution},
+    utils::print_by_queue::PrintFullByQueue,
+};
 use std::io::stdout;
 
 #[derive(Clone)]

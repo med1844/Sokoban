@@ -3,12 +3,12 @@ use std::io::stdout;
 use std::rc::Rc;
 
 use super::screen::{Screen, ScreenTransition};
-use crate::utils::print_by_queue::PrintFullByQueue;
 use crossterm::cursor::{MoveTo, MoveToNextLine};
 use crossterm::event::{Event, KeyCode};
 use crossterm::queue;
 use crossterm::style::{Print, PrintStyledContent, Stylize};
 use crossterm::terminal::Clear;
+use sokoban::utils::print_by_queue::PrintFullByQueue;
 
 pub struct MenuScreen {
     pub options: Vec<(String, Rc<RefCell<dyn Screen>>)>,

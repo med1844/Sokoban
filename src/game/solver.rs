@@ -537,7 +537,7 @@ impl<'a> Solver<'a> {
 
             for (mut new_h, mut new_steps, direction) in Self::get_next_pushes(&h, &r) {
                 loop {
-                    let (new_box_pos, player_moved) = new_h.execute(direction);
+                    let (_new_box_pos, player_moved) = new_h.execute(direction);
                     new_steps.push(direction);
                     if !player_moved {
                         // we can't push anymore

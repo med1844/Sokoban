@@ -1,6 +1,5 @@
-mod game;
+extern crate sokoban;
 mod screens;
-mod utils;
 use crate::screens::{
     exit_screen::ExitScreen,
     menu_screen::MenuScreen,

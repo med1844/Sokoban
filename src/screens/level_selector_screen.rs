@@ -2,11 +2,11 @@ use super::{
     game_screen::BoardScreen,
     screen::{Screen, ScreenTransition},
 };
-use crate::utils::print_by_queue::PrintFullByQueue;
 use crossterm::cursor::{MoveTo, MoveToNextLine};
 use crossterm::event::{Event, KeyCode};
 use crossterm::queue;
 use crossterm::style::{Print, PrintStyledContent, Stylize};
+use sokoban::utils::print_by_queue::PrintFullByQueue;
 use std::{
     cell::RefCell,
     fs::File,

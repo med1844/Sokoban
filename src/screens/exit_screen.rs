@@ -1,5 +1,5 @@
 use super::screen::Screen;
-use crate::utils::print_by_queue::PrintFullByQueue;
+use sokoban::utils::print_by_queue::PrintFullByQueue;
 
 pub struct ExitScreen;
 

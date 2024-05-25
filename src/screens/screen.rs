@@ -1,5 +1,5 @@
-use crate::utils::print_by_queue::PrintFullByQueue;
 use crossterm::event::Event;
+use sokoban::utils::print_by_queue::PrintFullByQueue;
 use std::cell::RefCell;
 use std::rc::Rc;
 
